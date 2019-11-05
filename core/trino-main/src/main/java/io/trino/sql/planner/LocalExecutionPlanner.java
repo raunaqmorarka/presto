@@ -194,6 +194,7 @@ import io.trino.sql.planner.plan.UpdateNode;
 import io.trino.sql.planner.plan.ValuesNode;
 import io.trino.sql.planner.plan.WindowNode;
 import io.trino.sql.planner.plan.WindowNode.Frame;
+import io.trino.sql.relational.ConstantExpression;
 import io.trino.sql.relational.LambdaDefinitionExpression;
 import io.trino.sql.relational.RowExpression;
 import io.trino.sql.relational.SqlToRowExpressionTranslator;
@@ -207,6 +208,7 @@ import io.trino.sql.tree.SortItem.Ordering;
 import io.trino.sql.tree.SymbolReference;
 import io.trino.type.BlockTypeOperators;
 import io.trino.type.FunctionType;
+import io.trino.util.RowExpressionConverter;
 
 import javax.inject.Inject;
 
@@ -252,6 +254,7 @@ import static io.trino.SystemSessionProperties.isSpillEnabled;
 import static io.trino.SystemSessionProperties.isSpillOrderBy;
 import static io.trino.SystemSessionProperties.isSpillWindowOperator;
 import static io.trino.operator.DistinctLimitOperator.DistinctLimitOperatorFactory;
+import static io.trino.operator.DynamicPageFilterCollector.DynamicPageFilterCollectorFactory;
 import static io.trino.operator.JoinUtils.isBuildSideReplicated;
 import static io.trino.operator.NestedLoopBuildOperator.NestedLoopBuildOperatorFactory;
 import static io.trino.operator.NestedLoopJoinOperator.NestedLoopJoinOperatorFactory;
@@ -267,6 +270,7 @@ import static io.trino.operator.WindowFunctionDefinition.window;
 import static io.trino.operator.unnest.UnnestOperator.UnnestOperatorFactory;
 import static io.trino.spi.StandardErrorCode.COMPILER_ERROR;
 import static io.trino.spi.type.BigintType.BIGINT;
+import static io.trino.spi.type.BooleanType.BOOLEAN;
 import static io.trino.spi.type.TypeUtils.readNativeValue;
 import static io.trino.spi.type.TypeUtils.writeNativeValue;
 import static io.trino.spiller.PartitioningSpillerFactory.unsupportedPartitioningSpillerFactory;
@@ -1365,7 +1369,18 @@ public class LocalExecutionPlanner
             try {
                 if (columns != null) {
                     Supplier<CursorProcessor> cursorProcessor = expressionCompiler.compileCursorProcessor(translatedFilter, translatedProjections, sourceNode.getId());
-                    Supplier<PageProcessor> pageProcessor = expressionCompiler.compilePageProcessor(translatedFilter, translatedProjections, Optional.of(context.getStageId() + "_" + planNodeId));
+
+                    Optional<DynamicPageFilterCollectorFactory> dynamicPageFilterCollectorFactory = Optional.empty();
+                    if (dynamicFilter != DynamicFilter.EMPTY) {
+                        TableScanNode tableScanNode = (TableScanNode) sourceNode;
+                        RowExpressionConverter converter = new RowExpressionConverter(sourceLayout, expressionTypes, metadata, session);
+                        if (translatedFilter.isEmpty()) {
+                            translatedFilter = Optional.of(new ConstantExpression(true, BOOLEAN));
+                        }
+                        dynamicPageFilterCollectorFactory = Optional.of(new DynamicPageFilterCollectorFactory(dynamicFilter, translatedFilter, tableScanNode.getAssignments(), converter, metadata));
+                    }
+
+                    Supplier<PageProcessor> pageProcessor = expressionCompiler.compilePageProcessor(translatedFilter, translatedProjections, Optional.of(context.getStageId() + "_" + planNodeId), OptionalInt.empty(), dynamicPageFilterCollectorFactory);
 
                     SourceOperatorFactory operatorFactory = new ScanFilterAndProjectOperatorFactory(
                             context.getNextOperatorId(),
