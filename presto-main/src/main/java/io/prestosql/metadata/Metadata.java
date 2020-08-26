@@ -16,6 +16,7 @@ package io.prestosql.metadata;
 import io.airlift.slice.Slice;
 import io.prestosql.Session;
 import io.prestosql.connector.CatalogName;
+import io.prestosql.connector.SchemaFilter;
 import io.prestosql.operator.aggregation.InternalAggregationFunction;
 import io.prestosql.operator.window.WindowFunctionSupplier;
 import io.prestosql.spi.PrestoException;
@@ -77,7 +78,12 @@ public interface Metadata
 
     boolean schemaExists(Session session, CatalogSchemaName schema);
 
-    List<String> listSchemaNames(Session session, String catalogName);
+    default List<String> listSchemaNames(Session session, String catalogName)
+    {
+        return listSchemaNames(session, catalogName, SchemaFilter.empty());
+    }
+
+    List<String> listSchemaNames(Session session, String catalogName, SchemaFilter schemaFilter);
 
     /**
      * Returns a table handle for the specified table name.

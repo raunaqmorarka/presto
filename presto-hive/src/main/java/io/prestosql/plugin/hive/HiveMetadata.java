@@ -343,6 +343,12 @@ public class HiveMetadata
     }
 
     @Override
+    public List<String> listSchemaNames(ConnectorSession session, String schemaNamePattern)
+    {
+        return metastore.getDatabases(schemaNamePattern);
+    }
+
+    @Override
     public HiveTableHandle getTableHandle(ConnectorSession session, SchemaTableName tableName)
     {
         requireNonNull(tableName, "tableName is null");

@@ -15,6 +15,7 @@ package io.prestosql.connector.system.jdbc;
 
 import io.prestosql.FullConnectorSession;
 import io.prestosql.Session;
+import io.prestosql.connector.SchemaFilter;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.security.AccessControl;
 import io.prestosql.spi.connector.ConnectorSession;
@@ -30,6 +31,7 @@ import javax.inject.Inject;
 
 import java.util.Optional;
 
+import static io.prestosql.connector.SchemaFilter.prefixFilterString;
 import static io.prestosql.connector.system.jdbc.FilterUtil.tryGetSingleVarcharValue;
 import static io.prestosql.metadata.MetadataListing.listCatalogs;
 import static io.prestosql.metadata.MetadataListing.listSchemas;
@@ -68,10 +70,13 @@ public class SchemaJdbcTable
     {
         Session session = ((FullConnectorSession) connectorSession).getSession();
         Optional<String> catalogFilter = tryGetSingleVarcharValue(constraint, 1);
+        SchemaFilter schemaFilter = new SchemaFilter(
+                tryGetSingleVarcharValue(constraint, 2),
+                prefixFilterString(constraint, 2));
 
         Builder table = InMemoryRecordSet.builder(METADATA);
         for (String catalog : listCatalogs(session, metadata, accessControl, catalogFilter).keySet()) {
-            for (String schema : listSchemas(session, metadata, accessControl, catalog)) {
+            for (String schema : listSchemas(session, metadata, accessControl, catalog, schemaFilter)) {
                 table.addRow(schema, catalog);
             }
         }

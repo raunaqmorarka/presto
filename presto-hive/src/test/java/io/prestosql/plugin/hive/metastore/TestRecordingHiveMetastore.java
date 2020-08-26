@@ -196,6 +196,15 @@ public class TestRecordingHiveMetastore
         }
 
         @Override
+        public List<String> getDatabases(String databasePattern)
+        {
+            if ("database".matches(databasePattern)) {
+                return ImmutableList.of("database");
+            }
+            return ImmutableList.of();
+        }
+
+        @Override
         public Optional<Table> getTable(HiveIdentity identity, String databaseName, String tableName)
         {
             if (databaseName.equals("database") && tableName.equals("table")) {

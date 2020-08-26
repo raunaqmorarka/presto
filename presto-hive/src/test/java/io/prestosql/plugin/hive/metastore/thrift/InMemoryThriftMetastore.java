@@ -174,6 +174,14 @@ public class InMemoryThriftMetastore
     }
 
     @Override
+    public synchronized List<String> getDatabases(String databasePattern)
+    {
+        return databases.keySet().stream()
+                .filter(database -> database.matches(databasePattern))
+                .collect(toImmutableList());
+    }
+
+    @Override
     public synchronized void createTable(HiveIdentity identity, Table table)
     {
         TableType tableType = TableType.valueOf(table.getTableType());

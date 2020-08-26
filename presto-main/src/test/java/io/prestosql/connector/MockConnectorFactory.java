@@ -72,6 +72,7 @@ public class MockConnectorFactory
         implements ConnectorFactory
 {
     private final Function<ConnectorSession, List<String>> listSchemaNames;
+    private final BiFunction<ConnectorSession, String, List<String>> listSchemaNamesByPattern;
     private final BiFunction<ConnectorSession, String, List<SchemaTableName>> listTables;
     private final BiFunction<ConnectorSession, SchemaTablePrefix, Map<SchemaTableName, ConnectorViewDefinition>> getViews;
     private final BiFunction<ConnectorSession, SchemaTableName, ConnectorTableHandle> getTableHandle;
@@ -85,6 +86,7 @@ public class MockConnectorFactory
 
     private MockConnectorFactory(
             Function<ConnectorSession, List<String>> listSchemaNames,
+            BiFunction<ConnectorSession, String, List<String>> listSchemaNamesByPattern,
             BiFunction<ConnectorSession, String, List<SchemaTableName>> listTables,
             BiFunction<ConnectorSession, SchemaTablePrefix, Map<SchemaTableName, ConnectorViewDefinition>> getViews,
             BiFunction<ConnectorSession, SchemaTableName, ConnectorTableHandle> getTableHandle,
@@ -97,6 +99,7 @@ public class MockConnectorFactory
             ListRoleGrants roleGrants)
     {
         this.listSchemaNames = requireNonNull(listSchemaNames, "listSchemaNames is null");
+        this.listSchemaNamesByPattern = requireNonNull(listSchemaNamesByPattern, "listSchemaNamesByPattern is null");
         this.listTables = requireNonNull(listTables, "listTables is null");
         this.getViews = requireNonNull(getViews, "getViews is null");
         this.getTableHandle = requireNonNull(getTableHandle, "getTableHandle is null");
@@ -124,7 +127,7 @@ public class MockConnectorFactory
     @Override
     public Connector create(String catalogName, Map<String, String> config, ConnectorContext context)
     {
-        return new MockConnector(context, listSchemaNames, listTables, getViews, getTableHandle, getColumns, applyProjection, applyTopN, getInsertLayout, getNewTableLayout, eventListeners, roleGrants);
+        return new MockConnector(context, listSchemaNames, listSchemaNamesByPattern, listTables, getViews, getTableHandle, getColumns, applyProjection, applyTopN, getInsertLayout, getNewTableLayout, eventListeners, roleGrants);
     }
 
     public static Builder builder()
@@ -155,6 +158,7 @@ public class MockConnectorFactory
     {
         private final ConnectorContext context;
         private final Function<ConnectorSession, List<String>> listSchemaNames;
+        private final BiFunction<ConnectorSession, String, List<String>> listSchemaNamesByPattern;
         private final BiFunction<ConnectorSession, String, List<SchemaTableName>> listTables;
         private final BiFunction<ConnectorSession, SchemaTablePrefix, Map<SchemaTableName, ConnectorViewDefinition>> getViews;
         private final BiFunction<ConnectorSession, SchemaTableName, ConnectorTableHandle> getTableHandle;
@@ -169,6 +173,7 @@ public class MockConnectorFactory
         private MockConnector(
                 ConnectorContext context,
                 Function<ConnectorSession, List<String>> listSchemaNames,
+                BiFunction<ConnectorSession, String, List<String>> listSchemaNamesByPattern,
                 BiFunction<ConnectorSession, String, List<SchemaTableName>> listTables,
                 BiFunction<ConnectorSession, SchemaTablePrefix, Map<SchemaTableName, ConnectorViewDefinition>> getViews,
                 BiFunction<ConnectorSession, SchemaTableName, ConnectorTableHandle> getTableHandle,
@@ -182,6 +187,7 @@ public class MockConnectorFactory
         {
             this.context = requireNonNull(context, "context is null");
             this.listSchemaNames = requireNonNull(listSchemaNames, "listSchemaNames is null");
+            this.listSchemaNamesByPattern = requireNonNull(listSchemaNamesByPattern, "listSchemaNamesByPattern is null");
             this.listTables = requireNonNull(listTables, "listTables is null");
             this.getViews = requireNonNull(getViews, "getViews is null");
             this.getTableHandle = requireNonNull(getTableHandle, "getTableHandle is null");
@@ -243,6 +249,12 @@ public class MockConnectorFactory
             public List<String> listSchemaNames(ConnectorSession session)
             {
                 return listSchemaNames.apply(session);
+            }
+
+            @Override
+            public List<String> listSchemaNames(ConnectorSession session, String schemaNamePattern)
+            {
+                return listSchemaNamesByPattern.apply(session, schemaNamePattern);
             }
 
             @Override
@@ -425,6 +437,7 @@ public class MockConnectorFactory
     public static final class Builder
     {
         private Function<ConnectorSession, List<String>> listSchemaNames = defaultListSchemaNames();
+        private BiFunction<ConnectorSession, String, List<String>> listSchemaNamesByPattern = defaultListSchemaNamesByPattern();
         private BiFunction<ConnectorSession, String, List<SchemaTableName>> listTables = defaultListTables();
         private BiFunction<ConnectorSession, SchemaTablePrefix, Map<SchemaTableName, ConnectorViewDefinition>> getViews = defaultGetViews();
         private BiFunction<ConnectorSession, SchemaTableName, ConnectorTableHandle> getTableHandle = defaultGetTableHandle();
@@ -439,6 +452,12 @@ public class MockConnectorFactory
         public Builder withListSchemaNames(Function<ConnectorSession, List<String>> listSchemaNames)
         {
             this.listSchemaNames = requireNonNull(listSchemaNames, "listSchemaNames is null");
+            return this;
+        }
+
+        public Builder withListSchemaNamesByPattern(BiFunction<ConnectorSession, String, List<String>> listSchemaNamesByPattern)
+        {
+            this.listSchemaNamesByPattern = requireNonNull(listSchemaNamesByPattern, "listSchemaNamesByPattern is null");
             return this;
         }
 
@@ -514,12 +533,17 @@ public class MockConnectorFactory
 
         public MockConnectorFactory build()
         {
-            return new MockConnectorFactory(listSchemaNames, listTables, getViews, getTableHandle, getColumns, applyProjection, applyTopN, getInsertLayout, getNewTableLayout, eventListeners, roleGrants);
+            return new MockConnectorFactory(listSchemaNames, listSchemaNamesByPattern, listTables, getViews, getTableHandle, getColumns, applyProjection, applyTopN, getInsertLayout, getNewTableLayout, eventListeners, roleGrants);
         }
 
         public static Function<ConnectorSession, List<String>> defaultListSchemaNames()
         {
             return (session) -> ImmutableList.of();
+        }
+
+        public static BiFunction<ConnectorSession, String, List<String>> defaultListSchemaNamesByPattern()
+        {
+            return (session, schemaPattern) -> ImmutableList.of();
         }
 
         public static ListRoleGrants defaultRoleAuthorizations()

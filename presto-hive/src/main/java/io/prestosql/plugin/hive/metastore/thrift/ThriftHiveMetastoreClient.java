@@ -104,6 +104,13 @@ public class ThriftHiveMetastoreClient
     }
 
     @Override
+    public List<String> getDatabases(String databasePattern)
+            throws TException
+    {
+        return client.get_databases(databasePattern);
+    }
+
+    @Override
     public Database getDatabase(String dbName)
             throws TException
     {

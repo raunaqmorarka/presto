@@ -65,6 +65,14 @@ public interface ConnectorMetadata
     }
 
     /**
+     * Returns the schemas provided by this connector matching given pattern
+     */
+    default List<String> listSchemaNames(ConnectorSession session, String schemaNamePattern)
+    {
+        return listSchemaNames(session);
+    }
+
+    /**
      * Returns a table handle for the specified table name, or null if the connector does not contain the table.
      */
     @Nullable

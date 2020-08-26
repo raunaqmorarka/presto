@@ -43,6 +43,12 @@ class UnimplementedHiveMetastore
     }
 
     @Override
+    public List<String> getDatabases(String databasePattern)
+    {
+        throw new UnsupportedOperationException();
+    }
+
+    @Override
     public Optional<Table> getTable(HiveIdentity identity, String databaseName, String tableName)
     {
         throw new UnsupportedOperationException();

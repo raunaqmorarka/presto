@@ -161,7 +161,7 @@ public class CachingHiveMetastore
         requireNonNull(executor, "executor is null");
 
         databaseNamesCache = newCacheBuilder(expiresAfterWriteMillis, refreshMills, maximumSize, statsRecording)
-                .build(asyncReloading(CacheLoader.from(this::loadAllDatabases), executor));
+                .build(asyncReloading(CacheLoader.from(this::loadDatabases), executor));
 
         databaseCache = newCacheBuilder(expiresAfterWriteMillis, refreshMills, maximumSize, statsRecording)
                 .build(asyncReloading(CacheLoader.from(this::loadDatabase), executor));
@@ -283,14 +283,20 @@ public class CachingHiveMetastore
     }
 
     @Override
-    public List<String> getAllDatabases()
+    public List<String> getDatabases(String databasePattern)
     {
-        return get(databaseNamesCache, "");
+        return get(databaseNamesCache, databasePattern);
     }
 
-    private List<String> loadAllDatabases()
+    @Override
+    public List<String> getAllDatabases()
     {
-        return delegate.getAllDatabases();
+        return get(databaseNamesCache, "*");
+    }
+
+    private List<String> loadDatabases(String databasePattern)
+    {
+        return delegate.getDatabases(databasePattern);
     }
 
     private Table getExistingTable(HiveIdentity identity, String databaseName, String tableName)

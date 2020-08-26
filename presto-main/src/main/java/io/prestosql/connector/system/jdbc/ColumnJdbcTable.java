@@ -18,6 +18,7 @@ import com.google.common.collect.ImmutableMap;
 import io.airlift.slice.Slices;
 import io.prestosql.FullConnectorSession;
 import io.prestosql.Session;
+import io.prestosql.connector.SchemaFilter;
 import io.prestosql.connector.system.SystemColumnHandle;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.QualifiedTablePrefix;
@@ -66,6 +67,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static io.airlift.slice.Slices.utf8Slice;
 import static io.prestosql.SystemSessionProperties.isOmitDateTimeTypePrecision;
+import static io.prestosql.connector.SchemaFilter.prefixFilterString;
 import static io.prestosql.connector.system.jdbc.FilterUtil.tablePrefix;
 import static io.prestosql.connector.system.jdbc.FilterUtil.tryGetSingleVarcharValue;
 import static io.prestosql.metadata.MetadataListing.listCatalogs;
@@ -181,9 +183,10 @@ public class ColumnJdbcTable
                 .filter(catalogName -> predicate.test(ImmutableMap.of(TABLE_CATALOG_COLUMN, toNullableValue(catalogName))))
                 .collect(toImmutableList());
 
+        Optional<String> schemaPrefix = prefixFilterString(tupleDomain, TABLE_SCHEMA_COLUMN);
         List<CatalogSchemaName> schemas = catalogs.stream()
                 .flatMap(catalogName ->
-                        listSchemas(session, metadata, accessControl, catalogName, schemaFilter).stream()
+                        listSchemas(session, metadata, accessControl, catalogName, new SchemaFilter(schemaFilter, schemaPrefix)).stream()
                                 .filter(schemaName -> !hasSchemaPredicate || predicate.test(ImmutableMap.of(
                                         TABLE_CATALOG_COLUMN, toNullableValue(catalogName),
                                         TABLE_SCHEMA_COLUMN, toNullableValue(schemaName))))
@@ -251,6 +254,8 @@ public class ColumnJdbcTable
         Domain schemaDomain = constraint.getDomains().get().getOrDefault(1, Domain.all(createUnboundedVarcharType()));
         Domain tableDomain = constraint.getDomains().get().getOrDefault(2, Domain.all(createUnboundedVarcharType()));
 
+        Optional<String> schemaPrefix = prefixFilterString(constraint, 1);
+
         for (String catalog : listCatalogs(session, metadata, accessControl, catalogFilter).keySet()) {
             if (!catalogDomain.includesNullableValue(utf8Slice(catalog))) {
                 continue;
@@ -262,7 +267,7 @@ public class ColumnJdbcTable
                 addColumnsRow(table, catalog, tableColumns, omitDateTimeTypePrecision);
             }
             else {
-                Collection<String> schemas = listSchemas(session, metadata, accessControl, catalog, schemaFilter);
+                Collection<String> schemas = listSchemas(session, metadata, accessControl, catalog, new SchemaFilter(schemaFilter, schemaPrefix));
                 for (String schema : schemas) {
                     if (!schemaDomain.includesNullableValue(utf8Slice(schema))) {
                         continue;

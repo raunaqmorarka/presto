@@ -20,6 +20,7 @@ import com.google.common.collect.ImmutableSet;
 import io.airlift.slice.Slice;
 import io.prestosql.Session;
 import io.prestosql.connector.CatalogName;
+import io.prestosql.connector.SchemaFilter;
 import io.prestosql.metadata.ResolvedFunction.ResolvedFunctionDecoder;
 import io.prestosql.operator.aggregation.InternalAggregationFunction;
 import io.prestosql.operator.window.WindowFunctionSupplier;
@@ -105,7 +106,7 @@ public abstract class AbstractMockMetadata
     }
 
     @Override
-    public List<String> listSchemaNames(Session session, String catalogName)
+    public List<String> listSchemaNames(Session session, String catalogName, SchemaFilter schemaFilter)
     {
         throw new UnsupportedOperationException();
     }

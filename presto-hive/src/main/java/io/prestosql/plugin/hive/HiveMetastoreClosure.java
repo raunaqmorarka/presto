@@ -61,6 +61,11 @@ public class HiveMetastoreClosure
         return delegate.getAllDatabases();
     }
 
+    public List<String> getDatabases(String databasePattern)
+    {
+        return delegate.getDatabases(databasePattern);
+    }
+
     private Table getExistingTable(HiveIdentity identity, String databaseName, String tableName)
     {
         return delegate.getTable(identity, databaseName, tableName)

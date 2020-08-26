@@ -103,6 +103,19 @@ public class MockThriftMetastoreClient
     }
 
     @Override
+    public List<String> getDatabases(String databasePattern)
+    {
+        accessCount.incrementAndGet();
+        if (throwException) {
+            throw new IllegalStateException();
+        }
+        if (TEST_DATABASE.matches(databasePattern)) {
+            return ImmutableList.of(TEST_DATABASE);
+        }
+        return ImmutableList.of();
+    }
+
+    @Override
     public List<String> getAllTables(String dbName)
     {
         accessCount.incrementAndGet();

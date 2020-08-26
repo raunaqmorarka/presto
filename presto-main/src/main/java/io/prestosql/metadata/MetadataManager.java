@@ -23,6 +23,7 @@ import com.google.common.collect.Multimap;
 import io.airlift.slice.Slice;
 import io.prestosql.Session;
 import io.prestosql.connector.CatalogName;
+import io.prestosql.connector.SchemaFilter;
 import io.prestosql.metadata.ResolvedFunction.ResolvedFunctionDecoder;
 import io.prestosql.operator.aggregation.InternalAggregationFunction;
 import io.prestosql.operator.window.WindowFunctionSupplier;
@@ -307,7 +308,7 @@ public final class MetadataManager
     }
 
     @Override
-    public List<String> listSchemaNames(Session session, String catalogName)
+    public List<String> listSchemaNames(Session session, String catalogName, SchemaFilter schemaFilter)
     {
         Optional<CatalogMetadata> catalog = getOptionalCatalogMetadata(session, catalogName);
 
@@ -317,7 +318,10 @@ public final class MetadataManager
             ConnectorSession connectorSession = session.toConnectorSession(catalogMetadata.getCatalogName());
             for (CatalogName connectorId : catalogMetadata.listConnectorIds()) {
                 ConnectorMetadata metadata = catalogMetadata.getMetadataFor(connectorId);
-                metadata.listSchemaNames(connectorSession).stream()
+                Optional<String> schemaPattern = schemaFilter.getSchemaPattern();
+                schemaPattern.map(pattern -> metadata.listSchemaNames(connectorSession, pattern))
+                        .orElseGet(() -> metadata.listSchemaNames(connectorSession))
+                        .stream()
                         .map(schema -> schema.toLowerCase(Locale.ENGLISH))
                         .forEach(schemaNames::add);
             }

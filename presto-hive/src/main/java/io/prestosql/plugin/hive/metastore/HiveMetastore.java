@@ -35,6 +35,11 @@ public interface HiveMetastore
 
     List<String> getAllDatabases();
 
+    default List<String> getDatabases(String databasePattern)
+    {
+        return getAllDatabases();
+    }
+
     Optional<Table> getTable(HiveIdentity identity, String databaseName, String tableName);
 
     Set<ColumnStatisticType> getSupportedColumnStatistics(Type type);

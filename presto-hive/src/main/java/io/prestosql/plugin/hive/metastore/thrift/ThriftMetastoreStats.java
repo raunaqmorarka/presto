@@ -19,6 +19,7 @@ import org.weakref.jmx.Nested;
 public class ThriftMetastoreStats
 {
     private final ThriftMetastoreApiStats getAllDatabases = new ThriftMetastoreApiStats();
+    private final ThriftMetastoreApiStats getDatabases = new ThriftMetastoreApiStats();
     private final ThriftMetastoreApiStats getDatabase = new ThriftMetastoreApiStats();
     private final ThriftMetastoreApiStats getAllTables = new ThriftMetastoreApiStats();
     private final ThriftMetastoreApiStats getTablesWithParameter = new ThriftMetastoreApiStats();
@@ -66,6 +67,13 @@ public class ThriftMetastoreStats
     public ThriftMetastoreApiStats getGetAllDatabases()
     {
         return getAllDatabases;
+    }
+
+    @Managed
+    @Nested
+    public ThriftMetastoreApiStats getGetDatabases()
+    {
+        return getDatabases;
     }
 
     @Managed

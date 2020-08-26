@@ -67,6 +67,7 @@ public class RecordingHiveMetastore
     private volatile Optional<List<String>> allDatabases = Optional.empty();
     private volatile Optional<Set<String>> allRoles = Optional.empty();
 
+    private final Cache<String, List<String>> databasesCache;
     private final Cache<String, Optional<Database>> databaseCache;
     private final Cache<HiveTableName, Optional<Table>> tableCache;
     private final Cache<String, Set<ColumnStatisticType>> supportedColumnStatisticsCache;
@@ -93,6 +94,7 @@ public class RecordingHiveMetastore
         this.recordingPath = Paths.get(requireNonNull(hiveConfig.getRecordingPath(), "recordingPath is null"));
         this.replay = hiveConfig.isReplay();
 
+        databasesCache = createCache(hiveConfig);
         databaseCache = createCache(hiveConfig);
         tableCache = createCache(hiveConfig);
         supportedColumnStatisticsCache = createCache(hiveConfig);
@@ -122,6 +124,7 @@ public class RecordingHiveMetastore
 
         allDatabases = recording.getAllDatabases();
         allRoles = recording.getAllRoles();
+        databasesCache.putAll(toMap(recording.getDatabasesByPattern()));
         databaseCache.putAll(toMap(recording.getDatabases()));
         tableCache.putAll(toMap(recording.getTables()));
         supportedColumnStatisticsCache.putAll(toMap(recording.getSupportedColumnStatistics()));
@@ -162,6 +165,7 @@ public class RecordingHiveMetastore
         Recording recording = new Recording(
                 allDatabases,
                 allRoles,
+                toPairs(databasesCache),
                 toPairs(databaseCache),
                 toPairs(tableCache),
                 toPairs(supportedColumnStatisticsCache),
@@ -198,6 +202,12 @@ public class RecordingHiveMetastore
     public Optional<Database> getDatabase(String databaseName)
     {
         return loadValue(databaseCache, databaseName, () -> delegate.getDatabase(databaseName));
+    }
+
+    @Override
+    public List<String> getDatabases(String databasePattern)
+    {
+        return loadValue(databasesCache, databasePattern, () -> delegate.getDatabases(databasePattern));
     }
 
     @Override
@@ -529,6 +539,7 @@ public class RecordingHiveMetastore
     {
         private final Optional<List<String>> allDatabases;
         private final Optional<Set<String>> allRoles;
+        private final List<Pair<String, List<String>>> databasesByPattern;
         private final List<Pair<String, Optional<Database>>> databases;
         private final List<Pair<HiveTableName, Optional<Table>>> tables;
         private final List<Pair<String, Set<ColumnStatisticType>>> supportedColumnStatistics;
@@ -549,6 +560,7 @@ public class RecordingHiveMetastore
         public Recording(
                 @JsonProperty("allDatabases") Optional<List<String>> allDatabases,
                 @JsonProperty("allRoles") Optional<Set<String>> allRoles,
+                @JsonProperty("databasesByPattern") List<Pair<String, List<String>>> databasesByPattern,
                 @JsonProperty("databases") List<Pair<String, Optional<Database>>> databases,
                 @JsonProperty("tables") List<Pair<HiveTableName, Optional<Table>>> tables,
                 @JsonProperty("supportedColumnStatistics") List<Pair<String, Set<ColumnStatisticType>>> supportedColumnStatistics,
@@ -567,6 +579,7 @@ public class RecordingHiveMetastore
         {
             this.allDatabases = allDatabases;
             this.allRoles = allRoles;
+            this.databasesByPattern = databasesByPattern;
             this.databases = databases;
             this.tables = tables;
             this.supportedColumnStatistics = supportedColumnStatistics;
@@ -594,6 +607,12 @@ public class RecordingHiveMetastore
         public Optional<Set<String>> getAllRoles()
         {
             return allRoles;
+        }
+
+        @JsonProperty
+        public List<Pair<String, List<String>>> getDatabasesByPattern()
+        {
+            return databasesByPattern;
         }
 
         @JsonProperty

@@ -27,6 +27,7 @@ import java.util.Optional;
 import java.util.OptionalLong;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicLong;
+import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -53,6 +54,7 @@ public class CountingMockConnector
             .collect(toImmutableSet());
 
     private final AtomicLong listSchemasCallsCounter = new AtomicLong();
+    private final AtomicLong listSchemasByPatternCount = new AtomicLong();
     private final AtomicLong listTablesCallsCounter = new AtomicLong();
     private final AtomicLong getColumnsCallsCounter = new AtomicLong();
     private final ListRoleGrantsCounter listRoleGranstCounter = new ListRoleGrantsCounter();
@@ -80,6 +82,7 @@ public class CountingMockConnector
     {
         synchronized (lock) {
             listSchemasCallsCounter.set(0);
+            listSchemasByPatternCount.set(0);
             listTablesCallsCounter.set(0);
             getColumnsCallsCounter.set(0);
             listRoleGranstCounter.reset();
@@ -87,6 +90,7 @@ public class CountingMockConnector
             runnable.run();
 
             return new MetadataCallsCount(listSchemasCallsCounter.get(),
+                    listSchemasByPatternCount.get(),
                     listTablesCallsCounter.get(),
                     getColumnsCallsCounter.get(),
                     listRoleGranstCounter.listRowGrantsCallsCounter.get(),
@@ -102,6 +106,12 @@ public class CountingMockConnector
                 .withListSchemaNames(connectorSession -> {
                     listSchemasCallsCounter.incrementAndGet();
                     return ImmutableList.of("test_schema1", "test_schema2");
+                })
+                .withListSchemaNamesByPattern((connectorSession, schemaNamePattern) -> {
+                    listSchemasByPatternCount.incrementAndGet();
+                    return ImmutableList.of("test_schema1", "test_schema2").stream()
+                            .filter(schema -> schema.matches(schemaNamePattern))
+                            .collect(toImmutableList());
                 })
                 .withListTables((connectorSession, schemaName) -> {
                     listTablesCallsCounter.incrementAndGet();
@@ -129,6 +139,7 @@ public class CountingMockConnector
     public static final class MetadataCallsCount
     {
         private final long listSchemasCount;
+        private final long listSchemasByPatternCount;
         private final long listTablesCount;
         private final long getColumnsCount;
         private final long listRoleGrantsCount;
@@ -138,10 +149,12 @@ public class CountingMockConnector
 
         public MetadataCallsCount()
         {
-            this(0, 0, 0, 0, 0, 0, 0);
+            this(0, 0, 0, 0, 0, 0, 0, 0);
         }
 
-        public MetadataCallsCount(long listSchemasCount,
+        public MetadataCallsCount(
+                long listSchemasCount,
+                long listSchemasByPatternCount,
                 long listTablesCount,
                 long getColumnsCount,
                 long listRoleGrantsCount,
@@ -150,6 +163,7 @@ public class CountingMockConnector
                 long limitPushedCount)
         {
             this.listSchemasCount = listSchemasCount;
+            this.listSchemasByPatternCount = listSchemasByPatternCount;
             this.listTablesCount = listTablesCount;
             this.getColumnsCount = getColumnsCount;
             this.listRoleGrantsCount = listRoleGrantsCount;
@@ -160,37 +174,42 @@ public class CountingMockConnector
 
         public MetadataCallsCount withListSchemasCount(long listSchemasCount)
         {
-            return new MetadataCallsCount(listSchemasCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
+            return new MetadataCallsCount(listSchemasCount, listSchemasByPatternCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
+        }
+
+        public MetadataCallsCount withListSchemasByPatternCount(long listSchemasByPatternCount)
+        {
+            return new MetadataCallsCount(listSchemasCount, listSchemasByPatternCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
         }
 
         public MetadataCallsCount withListTablesCount(long listTablesCount)
         {
-            return new MetadataCallsCount(listSchemasCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
+            return new MetadataCallsCount(listSchemasCount, listSchemasByPatternCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
         }
 
         public MetadataCallsCount withGetColumnsCount(long getColumnsCount)
         {
-            return new MetadataCallsCount(listSchemasCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
+            return new MetadataCallsCount(listSchemasCount, listSchemasByPatternCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
         }
 
         public MetadataCallsCount withListRoleGrantsCount(long listRoleGrantsCount)
         {
-            return new MetadataCallsCount(listSchemasCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
+            return new MetadataCallsCount(listSchemasCount, listSchemasByPatternCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
         }
 
         public MetadataCallsCount withRolesPushedCount(long rolesPushedCount)
         {
-            return new MetadataCallsCount(listSchemasCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
+            return new MetadataCallsCount(listSchemasCount, listSchemasByPatternCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
         }
 
         public MetadataCallsCount withGranteesPushedCount(long granteesPushedCount)
         {
-            return new MetadataCallsCount(listSchemasCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
+            return new MetadataCallsCount(listSchemasCount, listSchemasByPatternCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
         }
 
         public MetadataCallsCount withLimitPushedCount(long limitPushedCount)
         {
-            return new MetadataCallsCount(listSchemasCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
+            return new MetadataCallsCount(listSchemasCount, listSchemasByPatternCount, listTablesCount, getColumnsCount, listRoleGrantsCount, rolesPushedCount, granteesPushedCount, limitPushedCount);
         }
 
         @Override
@@ -204,6 +223,7 @@ public class CountingMockConnector
             }
             MetadataCallsCount that = (MetadataCallsCount) o;
             return listSchemasCount == that.listSchemasCount &&
+                    listSchemasByPatternCount == that.listSchemasByPatternCount &&
                     listTablesCount == that.listTablesCount &&
                     getColumnsCount == that.getColumnsCount &&
                     listRoleGrantsCount == that.listRoleGrantsCount &&
@@ -216,6 +236,7 @@ public class CountingMockConnector
         public int hashCode()
         {
             return Objects.hash(listSchemasCount,
+                    listSchemasByPatternCount,
                     listTablesCount,
                     getColumnsCount,
                     listRoleGrantsCount,
@@ -229,6 +250,7 @@ public class CountingMockConnector
         {
             return toStringHelper(this)
                     .add("listSchemasCount", listSchemasCount)
+                    .add("listSchemasByPatternCount", listSchemasByPatternCount)
                     .add("listTablesCount", listTablesCount)
                     .add("getColumnsCount", getColumnsCount)
                     .add("listRoleGrantsCount", listRoleGrantsCount)

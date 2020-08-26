@@ -74,6 +74,13 @@ public class FailureAwareThriftMetastoreClient
     }
 
     @Override
+    public List<String> getDatabases(String pattern)
+            throws TException
+    {
+        return runWithHandle(() -> delegate.getDatabases(pattern));
+    }
+
+    @Override
     public Database getDatabase(String databaseName)
             throws TException
     {

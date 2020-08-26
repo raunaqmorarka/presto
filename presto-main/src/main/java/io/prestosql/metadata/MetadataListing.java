@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableSortedMap;
 import com.google.common.collect.ImmutableSortedSet;
 import io.prestosql.Session;
 import io.prestosql.connector.CatalogName;
+import io.prestosql.connector.SchemaFilter;
 import io.prestosql.security.AccessControl;
 import io.prestosql.spi.connector.CatalogSchemaTableName;
 import io.prestosql.spi.connector.ColumnMetadata;
@@ -72,12 +73,13 @@ public final class MetadataListing
 
     public static SortedSet<String> listSchemas(Session session, Metadata metadata, AccessControl accessControl, String catalogName)
     {
-        return listSchemas(session, metadata, accessControl, catalogName, Optional.empty());
+        return listSchemas(session, metadata, accessControl, catalogName, SchemaFilter.empty());
     }
 
-    public static SortedSet<String> listSchemas(Session session, Metadata metadata, AccessControl accessControl, String catalogName, Optional<String> schemaName)
+    public static SortedSet<String> listSchemas(Session session, Metadata metadata, AccessControl accessControl, String catalogName, SchemaFilter schemaFilter)
     {
-        Set<String> schemaNames = ImmutableSet.copyOf(metadata.listSchemaNames(session, catalogName));
+        Set<String> schemaNames = ImmutableSet.copyOf(metadata.listSchemaNames(session, catalogName, schemaFilter));
+        Optional<String> schemaName = schemaFilter.getSchemaName();
         if (schemaName.isPresent()) {
             // we don't use metadata.schemaExists(), because this would change semantics of the method (all vs visible schemas)
             if (!schemaNames.contains(schemaName.get())) {

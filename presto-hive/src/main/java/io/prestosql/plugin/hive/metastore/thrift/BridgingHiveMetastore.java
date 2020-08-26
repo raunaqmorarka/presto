@@ -86,6 +86,12 @@ public class BridgingHiveMetastore
     }
 
     @Override
+    public List<String> getDatabases(String databasePattern)
+    {
+        return delegate.getDatabases(databasePattern);
+    }
+
+    @Override
     public Optional<Table> getTable(HiveIdentity identity, String databaseName, String tableName)
     {
         return delegate.getTable(identity, databaseName, tableName).map(table -> {

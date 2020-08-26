@@ -42,6 +42,9 @@ public interface ThriftMetastoreClient
     List<String> getAllDatabases()
             throws TException;
 
+    List<String> getDatabases(String pattern)
+            throws TException;
+
     Database getDatabase(String databaseName)
             throws TException;
 

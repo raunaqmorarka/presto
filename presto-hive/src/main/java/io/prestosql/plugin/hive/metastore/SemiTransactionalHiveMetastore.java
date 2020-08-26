@@ -164,6 +164,12 @@ public class SemiTransactionalHiveMetastore
         return delegate.getAllDatabases();
     }
 
+    public synchronized List<String> getDatabases(String databasePattern)
+    {
+        checkReadable();
+        return delegate.getDatabases(databasePattern);
+    }
+
     public synchronized Optional<Database> getDatabase(String databaseName)
     {
         checkReadable();

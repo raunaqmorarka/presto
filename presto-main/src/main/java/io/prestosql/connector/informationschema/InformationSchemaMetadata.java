@@ -19,6 +19,7 @@ import com.google.common.collect.ImmutableSet;
 import io.airlift.slice.Slice;
 import io.prestosql.FullConnectorSession;
 import io.prestosql.Session;
+import io.prestosql.connector.SchemaFilter;
 import io.prestosql.metadata.Metadata;
 import io.prestosql.metadata.QualifiedObjectName;
 import io.prestosql.metadata.QualifiedTablePrefix;
@@ -58,6 +59,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static io.airlift.slice.Slices.utf8Slice;
+import static io.prestosql.connector.SchemaFilter.prefixFilterString;
 import static io.prestosql.connector.informationschema.InformationSchemaTable.COLUMNS;
 import static io.prestosql.connector.informationschema.InformationSchemaTable.INFORMATION_SCHEMA;
 import static io.prestosql.connector.informationschema.InformationSchemaTable.ROLE_AUTHORIZATION_DESCRIPTORS;
@@ -330,8 +332,9 @@ public class InformationSchemaMetadata
             return ImmutableSet.of(new QualifiedTablePrefix(catalogName));
         }
 
+        Optional<String> schemaPrefix = prefixFilterString(constraint, SCHEMA_COLUMN_HANDLE);
         Session session = ((FullConnectorSession) connectorSession).getSession();
-        return listSchemaNames(session)
+        return listSchemaNames(session, new SchemaFilter(Optional.empty(), schemaPrefix))
                 .filter(prefix -> predicate.get().test(schemaAsFixedValues(prefix.getSchemaName().get())))
                 .collect(toImmutableSet());
     }
@@ -351,7 +354,7 @@ public class InformationSchemaMetadata
                     .peek(prefix -> verify(prefix.asQualifiedObjectName().isEmpty()))
                     .flatMap(prefix -> prefix.getSchemaName()
                             .map(schemaName -> Stream.of(prefix))
-                            .orElseGet(() -> listSchemaNames(session)))
+                            .orElseGet(() -> listSchemaNames(session, SchemaFilter.empty())))
                     .flatMap(prefix -> tables.get().stream()
                             .filter(this::isLowerCase)
                             .map(table -> new QualifiedObjectName(catalogName, prefix.getSchemaName().get(), table)))
@@ -379,9 +382,9 @@ public class InformationSchemaMetadata
         return COLUMNS == table;
     }
 
-    private Stream<QualifiedTablePrefix> listSchemaNames(Session session)
+    private Stream<QualifiedTablePrefix> listSchemaNames(Session session, SchemaFilter schemaFilter)
     {
-        return metadata.listSchemaNames(session, catalogName).stream()
+        return metadata.listSchemaNames(session, catalogName, schemaFilter).stream()
                 .map(schema -> new QualifiedTablePrefix(catalogName, schema));
     }
 
