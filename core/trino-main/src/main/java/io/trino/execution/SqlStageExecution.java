@@ -29,11 +29,17 @@ import io.trino.metadata.InternalNode;
 import io.trino.metadata.Split;
 import io.trino.server.DynamicFilterService;
 import io.trino.spi.TrinoException;
+import io.trino.spi.connector.DynamicFilter;
 import io.trino.split.RemoteSplit;
+import io.trino.sql.DynamicFilters;
 import io.trino.sql.planner.PlanFragment;
+import io.trino.sql.planner.TypeProvider;
+import io.trino.sql.planner.optimizations.PlanNodeSearcher;
+import io.trino.sql.planner.plan.FilterNode;
 import io.trino.sql.planner.plan.PlanFragmentId;
 import io.trino.sql.planner.plan.PlanNodeId;
 import io.trino.sql.planner.plan.RemoteSourceNode;
+import io.trino.sql.planner.plan.TableScanNode;
 
 import javax.annotation.concurrent.GuardedBy;
 import javax.annotation.concurrent.ThreadSafe;
@@ -62,10 +68,12 @@ import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Sets.newConcurrentHashSet;
 import static io.airlift.http.client.HttpUriBuilder.uriBuilderFrom;
+import static io.trino.SystemSessionProperties.isEnableDynamicFiltering;
 import static io.trino.failuredetector.FailureDetector.State.GONE;
 import static io.trino.operator.ExchangeOperator.REMOTE_CONNECTOR_ID;
 import static io.trino.spi.StandardErrorCode.GENERIC_INTERNAL_ERROR;
 import static io.trino.spi.StandardErrorCode.REMOTE_HOST_GONE;
+import static io.trino.sql.DynamicFilters.extractDynamicFilters;
 import static java.util.Objects.requireNonNull;
 
 @ThreadSafe
@@ -106,6 +114,8 @@ public final class SqlStageExecution
     private final AtomicReference<OutputBuffers> outputBuffers = new AtomicReference<>();
 
     private final ListenerManager<Set<Lifespan>> completedLifespansChangeListeners = new ListenerManager<>();
+
+    private Map<PlanNodeId, DynamicFilter> dynamicFilters = ImmutableMap.of();
 
     public static SqlStageExecution createSqlStageExecution(
             StageId stageId,
@@ -167,6 +177,34 @@ public final class SqlStageExecution
             }
         }
         this.exchangeSources = fragmentToExchangeSource.build();
+
+        if (isEnableDynamicFiltering(stateMachine.getSession())) {
+            TypeProvider typeProvider = TypeProvider.copyOf(stateMachine.getFragment().getSymbols());
+            ImmutableMap.Builder<PlanNodeId, DynamicFilter> dynamicFiltersBuilder = ImmutableMap.builder();
+            PlanNodeSearcher.searchFrom(stateMachine.getFragment().getRoot())
+                    .where(node -> {
+                        if (!(node instanceof FilterNode)) {
+                            return false;
+                        }
+                        FilterNode filterNode = (FilterNode) node;
+                        return filterNode.getSource() instanceof TableScanNode;
+                    })
+                    .findAll().stream().map(FilterNode.class::cast)
+                    .forEach(filterNode -> {
+                        List<DynamicFilters.Descriptor> dynamicFilters = extractDynamicFilters(filterNode.getPredicate()).getDynamicConjuncts();
+                        if (!dynamicFilters.isEmpty()) {
+                            TableScanNode tableScanNode = (TableScanNode) filterNode.getSource();
+                            dynamicFiltersBuilder.put(
+                                    tableScanNode.getId(),
+                                    dynamicFilterService.createDynamicFilter(
+                                            stateMachine.getStageId().getQueryId(),
+                                            dynamicFilters,
+                                            tableScanNode.getAssignments(),
+                                            typeProvider));
+                        }
+                    });
+            dynamicFilters = dynamicFiltersBuilder.build();
+        }
     }
 
     // this is a separate method to ensure that the `this` reference is not leaked during construction
@@ -456,6 +494,7 @@ public final class SqlStageExecution
                 totalPartitions,
                 outputBuffers,
                 nodeTaskMap.createPartitionedSplitCountTracker(node, taskId),
+                dynamicFilters,
                 summarizeTaskInfo);
 
         completeSources.forEach(task::noMoreSplits);

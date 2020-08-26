@@ -40,12 +40,14 @@ import io.trino.memory.MemoryPoolAssignment;
 import io.trino.memory.MemoryPoolAssignmentsRequest;
 import io.trino.memory.NodeMemoryConfig;
 import io.trino.memory.QueryContext;
+import io.trino.server.DynamicFilterUpdate;
 import io.trino.spi.QueryId;
 import io.trino.spi.TrinoException;
 import io.trino.spiller.LocalSpillManager;
 import io.trino.spiller.NodeSpillConfig;
 import io.trino.sql.planner.LocalExecutionPlanner;
 import io.trino.sql.planner.PlanFragment;
+import io.trino.sql.planner.plan.PlanNodeId;
 import io.trino.version.EmbedVersion;
 import org.joda.time.DateTime;
 import org.weakref.jmx.Flatten;
@@ -59,6 +61,7 @@ import javax.inject.Inject;
 
 import java.io.Closeable;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.OptionalInt;
@@ -367,10 +370,10 @@ public class SqlTaskManager
     }
 
     @Override
-    public TaskInfo updateTask(Session session, TaskId taskId, Optional<PlanFragment> fragment, List<TaskSource> sources, OutputBuffers outputBuffers, OptionalInt totalPartitions)
+    public TaskInfo updateTask(Session session, TaskId taskId, Optional<PlanFragment> fragment, List<TaskSource> sources, OutputBuffers outputBuffers, OptionalInt totalPartitions, Map<PlanNodeId, DynamicFilterUpdate> dynamicFilter)
     {
         try {
-            return embedVersion.embedVersion(() -> doUpdateTask(session, taskId, fragment, sources, outputBuffers, totalPartitions)).call();
+            return embedVersion.embedVersion(() -> doUpdateTask(session, taskId, fragment, sources, outputBuffers, totalPartitions, dynamicFilter)).call();
         }
         catch (Exception e) {
             throwIfUnchecked(e);
@@ -379,7 +382,7 @@ public class SqlTaskManager
         }
     }
 
-    private TaskInfo doUpdateTask(Session session, TaskId taskId, Optional<PlanFragment> fragment, List<TaskSource> sources, OutputBuffers outputBuffers, OptionalInt totalPartitions)
+    private TaskInfo doUpdateTask(Session session, TaskId taskId, Optional<PlanFragment> fragment, List<TaskSource> sources, OutputBuffers outputBuffers, OptionalInt totalPartitions, Map<PlanNodeId, DynamicFilterUpdate> dynamicFilter)
     {
         requireNonNull(session, "session is null");
         requireNonNull(taskId, "taskId is null");
@@ -400,7 +403,7 @@ public class SqlTaskManager
         }
 
         sqlTask.recordHeartbeat();
-        return sqlTask.updateTask(session, fragment, sources, outputBuffers, totalPartitions);
+        return sqlTask.updateTask(session, fragment, sources, outputBuffers, totalPartitions, dynamicFilter);
     }
 
     @Override

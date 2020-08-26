@@ -131,6 +131,7 @@ import io.trino.spi.connector.RecordSet;
 import io.trino.spi.connector.SortOrder;
 import io.trino.spi.predicate.Domain;
 import io.trino.spi.predicate.NullableValue;
+import io.trino.spi.predicate.TupleDomain;
 import io.trino.spi.type.RowType;
 import io.trino.spi.type.Type;
 import io.trino.spi.type.TypeOperators;
@@ -220,6 +221,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.Supplier;
@@ -704,6 +706,11 @@ public class LocalExecutionPlanner
                 checkState(this.driverInstanceCount.getAsInt() == driverInstanceCount, "driverInstance count already set to " + this.driverInstanceCount.getAsInt());
             }
             this.driverInstanceCount = OptionalInt.of(driverInstanceCount);
+        }
+
+        public DynamicFilter createCoordinatorDynamicFilter(TableScanNode tableScanNode)
+        {
+            return taskContext.createCoordinatorDynamicFilter(tableScanNode.getId());
         }
     }
 
@@ -1443,7 +1450,41 @@ public class LocalExecutionPlanner
             }
 
             log.debug("[TableScan] Dynamic filters: %s", dynamicFilters);
-            return context.getDynamicFiltersCollector().createDynamicFilter(dynamicFilters, tableScanNode.getAssignments(), context.getTypes());
+            DynamicFilter localDynamicFilter = context.getDynamicFiltersCollector().createDynamicFilter(dynamicFilters, tableScanNode.getAssignments(), context.getTypes());
+            DynamicFilter coordinatorDynamicFilter = context.createCoordinatorDynamicFilter(tableScanNode);
+            return new DynamicFilter() {
+                @Override
+                public CompletableFuture<?> isBlocked()
+                {
+                    if (localDynamicFilter.isComplete()) {
+                        return coordinatorDynamicFilter.isBlocked();
+                    }
+                    else if (coordinatorDynamicFilter.isComplete()) {
+                        return localDynamicFilter.isBlocked();
+                    }
+                    else {
+                        return CompletableFuture.anyOf(localDynamicFilter.isBlocked(), coordinatorDynamicFilter.isBlocked());
+                    }
+                }
+
+                @Override
+                public boolean isComplete()
+                {
+                    return localDynamicFilter.isComplete() && coordinatorDynamicFilter.isComplete();
+                }
+
+                @Override
+                public boolean isAwaitable()
+                {
+                    return localDynamicFilter.isAwaitable() || coordinatorDynamicFilter.isAwaitable();
+                }
+
+                @Override
+                public TupleDomain<ColumnHandle> getCurrentPredicate()
+                {
+                    return localDynamicFilter.getCurrentPredicate().intersect(coordinatorDynamicFilter.getCurrentPredicate());
+                }
+            };
         }
 
         @Override

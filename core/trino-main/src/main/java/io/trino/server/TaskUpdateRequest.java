@@ -20,6 +20,7 @@ import io.trino.SessionRepresentation;
 import io.trino.execution.TaskSource;
 import io.trino.execution.buffer.OutputBuffers;
 import io.trino.sql.planner.PlanFragment;
+import io.trino.sql.planner.plan.PlanNodeId;
 
 import java.util.List;
 import java.util.Map;
@@ -38,6 +39,7 @@ public class TaskUpdateRequest
     private final List<TaskSource> sources;
     private final OutputBuffers outputIds;
     private final OptionalInt totalPartitions;
+    private final Map<PlanNodeId, DynamicFilterUpdate> dynamicFilter;
 
     @JsonCreator
     public TaskUpdateRequest(
@@ -46,7 +48,8 @@ public class TaskUpdateRequest
             @JsonProperty("fragment") Optional<PlanFragment> fragment,
             @JsonProperty("sources") List<TaskSource> sources,
             @JsonProperty("outputIds") OutputBuffers outputIds,
-            @JsonProperty("totalPartitions") OptionalInt totalPartitions)
+            @JsonProperty("totalPartitions") OptionalInt totalPartitions,
+            @JsonProperty("dynamicFilter") Map<PlanNodeId, DynamicFilterUpdate> dynamicFilter)
     {
         requireNonNull(session, "session is null");
         requireNonNull(extraCredentials, "extraCredentials is null");
@@ -54,6 +57,7 @@ public class TaskUpdateRequest
         requireNonNull(sources, "sources is null");
         requireNonNull(outputIds, "outputIds is null");
         requireNonNull(totalPartitions, "totalPartitions is null");
+        requireNonNull(dynamicFilter, "dynamicFilter is null");
 
         this.session = session;
         this.extraCredentials = extraCredentials;
@@ -61,6 +65,7 @@ public class TaskUpdateRequest
         this.sources = ImmutableList.copyOf(sources);
         this.outputIds = outputIds;
         this.totalPartitions = totalPartitions;
+        this.dynamicFilter = dynamicFilter;
     }
 
     @JsonProperty
@@ -97,6 +102,12 @@ public class TaskUpdateRequest
     public OptionalInt getTotalPartitions()
     {
         return totalPartitions;
+    }
+
+    @JsonProperty
+    public Map<PlanNodeId, DynamicFilterUpdate> getDynamicFilter()
+    {
+        return dynamicFilter;
     }
 
     @Override

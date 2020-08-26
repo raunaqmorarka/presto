@@ -34,8 +34,13 @@ import io.trino.memory.QueryContext;
 import io.trino.memory.QueryContextVisitor;
 import io.trino.memory.context.LocalMemoryContext;
 import io.trino.memory.context.MemoryTrackingContext;
+import io.trino.server.DynamicFilterUpdate;
+import io.trino.spi.connector.ColumnHandle;
+import io.trino.spi.connector.DynamicFilter;
 import io.trino.spi.predicate.Domain;
+import io.trino.spi.predicate.TupleDomain;
 import io.trino.sql.planner.plan.DynamicFilterId;
+import io.trino.sql.planner.plan.PlanNodeId;
 import org.joda.time.DateTime;
 
 import javax.annotation.concurrent.GuardedBy;
@@ -45,6 +50,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.OptionalInt;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ScheduledExecutorService;
@@ -52,9 +59,11 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static com.google.common.base.Verify.verify;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
 import static com.google.common.collect.Iterables.transform;
 import static com.google.common.collect.Sets.newConcurrentHashSet;
+import static io.airlift.concurrent.MoreFutures.unmodifiableFuture;
 import static io.airlift.units.DataSize.succinctBytes;
 import static java.lang.Math.max;
 import static java.lang.Math.toIntExact;
@@ -106,6 +115,9 @@ public class TaskContext
 
     private final MemoryTrackingContext taskMemoryContext;
     private final DynamicFiltersCollector dynamicFiltersCollector;
+
+    // Dynamic filters received from coordinator
+    private final Map<PlanNodeId, CoordinatorDynamicFilter> coordinatorDynamicFilters = new ConcurrentHashMap<>();
 
     public static TaskContext createTaskContext(
             QueryContext queryContext,
@@ -589,5 +601,81 @@ public class TaskContext
     public QueryContext getQueryContext()
     {
         return queryContext;
+    }
+
+    public void addDynamicFilter(Map<PlanNodeId, DynamicFilterUpdate> dynamicFilters)
+    {
+        dynamicFilters.forEach((tableScanNodeId, dynamicFilterUpdate) -> {
+            CoordinatorDynamicFilter dynamicFilter = createCoordinatorDynamicFilter(tableScanNodeId);
+            dynamicFilter.update(dynamicFilterUpdate.getCurrentPredicate(), dynamicFilterUpdate.isComplete());
+        });
+    }
+
+    public CoordinatorDynamicFilter createCoordinatorDynamicFilter(PlanNodeId tableScanNodeId)
+    {
+        return coordinatorDynamicFilters.computeIfAbsent(tableScanNodeId, ignored -> new CoordinatorDynamicFilter());
+    }
+
+    private static class CoordinatorDynamicFilter
+            implements DynamicFilter
+    {
+        @GuardedBy("this")
+        private CompletableFuture<?> isBlocked;
+
+        @GuardedBy("this")
+        private TupleDomain<ColumnHandle> currentPredicate;
+
+        @GuardedBy("this")
+        private boolean isComplete;
+
+        private CoordinatorDynamicFilter()
+        {
+            this.currentPredicate = TupleDomain.all();
+            this.isBlocked = new CompletableFuture<>();
+        }
+
+        @Override
+        public synchronized CompletableFuture<?> isBlocked()
+        {
+            return unmodifiableFuture(isBlocked);
+        }
+
+        @Override
+        public synchronized boolean isComplete()
+        {
+            return isComplete;
+        }
+
+        @Override
+        public synchronized boolean isAwaitable()
+        {
+            return !isComplete;
+        }
+
+        @Override
+        public synchronized TupleDomain<ColumnHandle> getCurrentPredicate()
+        {
+            return currentPredicate;
+        }
+
+        public void update(TupleDomain<ColumnHandle> predicate, boolean isComplete)
+        {
+            if (isComplete()) {
+                return; // already complete, do nothing
+            }
+            if (!isComplete && currentPredicate.equals(predicate)) {
+                return; // do nothing if no change in predicate or completion status
+            }
+            CompletableFuture<?> currentFuture;
+            synchronized (this) {
+                this.isComplete = isComplete;
+                currentPredicate = predicate;
+                currentFuture = isBlocked;
+                // create next blocking future (if needed)
+                isBlocked = isComplete() ? NOT_BLOCKED : new CompletableFuture<>();
+            }
+            // notify readers outside of lock since this may result in a callback
+            verify(currentFuture.complete(null));
+        }
     }
 }

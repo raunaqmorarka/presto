@@ -313,6 +313,7 @@ public class TestHttpRemoteTask
                 OptionalInt.empty(),
                 createInitialEmptyOutputBuffers(OutputBuffers.BufferType.BROADCAST),
                 new NodeTaskMap.PartitionedSplitCountTracker(i -> {}),
+                ImmutableMap.of(),
                 true);
     }
 

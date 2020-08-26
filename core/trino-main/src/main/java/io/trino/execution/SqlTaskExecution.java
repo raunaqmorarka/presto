@@ -37,6 +37,7 @@ import io.trino.operator.PipelineContext;
 import io.trino.operator.PipelineExecutionStrategy;
 import io.trino.operator.StageExecutionDescriptor;
 import io.trino.operator.TaskContext;
+import io.trino.server.DynamicFilterUpdate;
 import io.trino.sql.planner.LocalExecutionPlanner.LocalExecutionPlan;
 import io.trino.sql.planner.plan.PlanNodeId;
 
@@ -318,6 +319,11 @@ public class SqlTaskExecution
             // we may have transitioned to no more splits, so check for completion
             checkTaskCompletion();
         }
+    }
+
+    public void addDynamicFilter(Map<PlanNodeId, DynamicFilterUpdate> dynamicFilter)
+    {
+        taskContext.addDynamicFilter(dynamicFilter);
     }
 
     private synchronized Map<PlanNodeId, TaskSource> updateSources(List<TaskSource> sources)
