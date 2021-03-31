@@ -798,7 +798,12 @@ public final class PlanMatchPattern
 
     public static PlanMatchPattern limit(long limit, List<Ordering> tiesResolvers, boolean partial, PlanMatchPattern source)
     {
-        return node(LimitNode.class, source).with(new LimitMatcher(limit, tiesResolvers, partial));
+        return limit(limit, tiesResolvers, partial, ImmutableList.of(), source);
+    }
+
+    public static PlanMatchPattern limit(long limit, List<Ordering> tiesResolvers, boolean partial, List<Ordering> inputOrdering, PlanMatchPattern source)
+    {
+        return node(LimitNode.class, source).with(new LimitMatcher(limit, tiesResolvers, partial, inputOrdering));
     }
 
     public static PlanMatchPattern enforceSingleRow(PlanMatchPattern source)

@@ -14,18 +14,27 @@
 package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import io.trino.sql.planner.OrderingScheme;
 import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.iterative.rule.test.BaseRuleTest;
 import io.trino.sql.planner.plan.JoinNode.EquiJoinClause;
 import org.testng.annotations.Test;
 
+import java.util.List;
+import java.util.Optional;
+
+import static io.trino.spi.connector.SortOrder.ASC_NULLS_FIRST;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.equiJoinClause;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.join;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.limit;
+import static io.trino.sql.planner.assertions.PlanMatchPattern.sort;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.values;
 import static io.trino.sql.planner.plan.JoinNode.Type.FULL;
 import static io.trino.sql.planner.plan.JoinNode.Type.LEFT;
 import static io.trino.sql.planner.plan.JoinNode.Type.RIGHT;
+import static io.trino.sql.tree.SortItem.NullOrdering.FIRST;
+import static io.trino.sql.tree.SortItem.Ordering.ASCENDING;
 
 public class TestPushLimitThroughOuterJoin
         extends BaseRuleTest
@@ -127,5 +136,89 @@ public class TestPushLimitThroughOuterJoin
                                     new EquiJoinClause(leftKey, rightKey)));
                 })
                 .doesNotFire();
+    }
+
+    @Test
+    public void testOrderSensitiveLimitLeftJoin()
+    {
+        tester().assertThat(new PushLimitThroughOuterJoin())
+                .on(p -> {
+                    Symbol leftKey = p.symbol("leftKey");
+                    Symbol rightKey = p.symbol("rightKey");
+                    List<Symbol> orderBy = ImmutableList.of(rightKey);
+                    return p.limit(
+                            1,
+                            Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(rightKey, ASC_NULLS_FIRST))),
+                            p.join(
+                                    LEFT,
+                                    p.values(5, leftKey),
+                                    p.values(5, rightKey),
+                                    new EquiJoinClause(leftKey, rightKey)));
+                })
+                .doesNotFire();
+
+        tester().assertThat(new PushLimitThroughOuterJoin())
+                .on(p -> {
+                    Symbol leftKey = p.symbol("leftKey");
+                    Symbol rightKey = p.symbol("rightKey");
+                    List<Symbol> orderBy = ImmutableList.of(leftKey);
+                    return p.limit(
+                            1,
+                            Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(leftKey, ASC_NULLS_FIRST))),
+                            p.join(
+                                    LEFT,
+                                    p.values(5, leftKey),
+                                    p.values(5, rightKey),
+                                    new EquiJoinClause(leftKey, rightKey)));
+                })
+                .matches(
+                        limit(1, ImmutableList.of(), false, ImmutableList.of(sort("leftKey", ASCENDING, FIRST)),
+                                join(
+                                        LEFT,
+                                        ImmutableList.of(equiJoinClause("leftKey", "rightKey")),
+                                        limit(1, ImmutableList.of(), true, ImmutableList.of(sort("leftKey", ASCENDING, FIRST)), values("leftKey")),
+                                        values("rightKey"))));
+    }
+
+    @Test
+    public void testOrderSensitiveLimitRightJoin()
+    {
+        tester().assertThat(new PushLimitThroughOuterJoin())
+                .on(p -> {
+                    Symbol leftKey = p.symbol("leftKey");
+                    Symbol rightKey = p.symbol("rightKey");
+                    List<Symbol> orderBy = ImmutableList.of(leftKey);
+                    return p.limit(
+                            1,
+                            Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(leftKey, ASC_NULLS_FIRST))),
+                            p.join(
+                                    RIGHT,
+                                    p.values(5, leftKey),
+                                    p.values(5, rightKey),
+                                    new EquiJoinClause(leftKey, rightKey)));
+                })
+                .doesNotFire();
+
+        tester().assertThat(new PushLimitThroughOuterJoin())
+                .on(p -> {
+                    Symbol leftKey = p.symbol("leftKey");
+                    Symbol rightKey = p.symbol("rightKey");
+                    List<Symbol> orderBy = ImmutableList.of(rightKey);
+                    return p.limit(
+                            1,
+                            Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(rightKey, ASC_NULLS_FIRST))),
+                            p.join(
+                                    RIGHT,
+                                    p.values(5, leftKey),
+                                    p.values(5, rightKey),
+                                    new EquiJoinClause(leftKey, rightKey)));
+                })
+                .matches(
+                        limit(1, ImmutableList.of(), false, ImmutableList.of(sort("rightKey", ASCENDING, FIRST)),
+                                join(
+                                        RIGHT,
+                                        ImmutableList.of(equiJoinClause("leftKey", "rightKey")),
+                                        values("leftKey"),
+                                        limit(1, ImmutableList.of(), true, ImmutableList.of(sort("rightKey", ASCENDING, FIRST)), values("rightKey")))));
     }
 }

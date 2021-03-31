@@ -18,9 +18,11 @@ import io.trino.matching.Captures;
 import io.trino.matching.Pattern;
 import io.trino.sql.planner.iterative.Rule;
 import io.trino.sql.planner.plan.LimitNode;
+import io.trino.sql.planner.plan.SortNode;
 import io.trino.sql.planner.plan.ValuesNode;
 
 import static io.trino.sql.planner.optimizations.QueryCardinalityUtil.isAtMost;
+import static io.trino.sql.planner.optimizations.QueryCardinalityUtil.isScalar;
 import static io.trino.sql.planner.plan.Patterns.limit;
 
 /**
@@ -44,6 +46,15 @@ public class RemoveRedundantLimit
     {
         if (limit.getCount() == 0) {
             return Result.ofPlanNode(new ValuesNode(limit.getId(), limit.getOutputSymbols(), ImmutableList.of()));
+        }
+        if (limit.isOrderSensitive()) {
+            if (isScalar(limit.getSource(), context.getLookup())) {
+                return Result.ofPlanNode(limit.getSource());
+            }
+            if (isAtMost(limit.getSource(), context.getLookup(), limit.getCount())) {
+                return Result.ofPlanNode(new SortNode(context.getIdAllocator().getNextId(), limit.getSource(), limit.getInputOrdering().get(), false));
+            }
+            return Result.empty();
         }
         if (isAtMost(limit.getSource(), context.getLookup(), limit.getCount())) {
             return Result.ofPlanNode(limit.getSource());

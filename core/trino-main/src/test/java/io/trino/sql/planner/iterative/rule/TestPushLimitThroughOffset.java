@@ -14,10 +14,16 @@
 package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import io.trino.sql.planner.OrderingScheme;
 import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.iterative.rule.test.BaseRuleTest;
 import org.testng.annotations.Test;
 
+import java.util.List;
+import java.util.Optional;
+
+import static io.trino.spi.connector.SortOrder.ASC_NULLS_FIRST;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.limit;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.offset;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.sort;
@@ -68,5 +74,22 @@ public class TestPushLimitThroughOffset
                             p.offset(Long.MAX_VALUE, p.values()));
                 })
                 .doesNotFire();
+    }
+
+    @Test
+    public void testPushdownOrderSensitiveLimitThroughOffset()
+    {
+        tester().assertThat(new PushLimitThroughOffset())
+                .on(p -> {
+                    List<Symbol> orderBy = ImmutableList.of(p.symbol("a"));
+                    return p.limit(
+                            2,
+                            Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(p.symbol("a"), ASC_NULLS_FIRST))),
+                            p.offset(5, p.values()));
+                })
+                .matches(
+                        offset(
+                                5,
+                                limit(7, ImmutableList.of(), false, ImmutableList.of(sort("a", ASCENDING, FIRST)), values())));
     }
 }

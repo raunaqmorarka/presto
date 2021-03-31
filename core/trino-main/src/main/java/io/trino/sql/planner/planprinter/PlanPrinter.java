@@ -516,9 +516,15 @@ public class PlanPrinter
         @Override
         public Void visitLimit(LimitNode node, Void context)
         {
+            String inputOrdering = node.getInputOrdering()
+                    .map(orderingScheme ->
+                            " input ordered by " + orderingScheme.getOrderBy().stream()
+                                    .map(input -> input + " " + orderingScheme.getOrdering(input))
+                                    .collect(joining(", ", "(", ")")))
+                    .orElse("");
             addNode(node,
                     format("Limit%s", node.isPartial() ? "Partial" : ""),
-                    format("[%s%s]", node.getCount(), node.isWithTies() ? "+ties" : ""));
+                    format("[%s%s%s]", node.getCount(), node.isWithTies() ? "+ties" : "", inputOrdering));
             return processChildren(node, context);
         }
 

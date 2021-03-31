@@ -324,6 +324,11 @@ public final class Patterns
         {
             return property("count", LimitNode::getCount);
         }
+
+        public static Property<LimitNode, Lookup, Boolean> isOrderSensitive()
+        {
+            return property("isOrderSensitive", LimitNode::isOrderSensitive);
+        }
     }
 
     public static final class Sample

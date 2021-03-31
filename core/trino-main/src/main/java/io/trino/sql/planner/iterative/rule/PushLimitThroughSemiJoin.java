@@ -52,6 +52,12 @@ public class PushLimitThroughSemiJoin
                 return Result.empty();
             }
         }
+        if (parent.isOrderSensitive()) {
+            // do not push down order sensitive Limit if input ordering depends on symbol produced by SemiJoin
+            if (parent.getInputOrdering().get().getOrderBy().contains(semiJoinNode.getSemiJoinOutput())) {
+                return Result.empty();
+            }
+        }
         return Result.ofPlanNode(transpose(parent, semiJoinNode));
     }
 }

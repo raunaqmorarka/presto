@@ -24,6 +24,7 @@ import io.trino.sql.planner.plan.SortNode;
 import io.trino.sql.planner.plan.TopNNode;
 
 import static io.trino.matching.Capture.newCapture;
+import static io.trino.sql.planner.optimizations.LocalProperties.verifyMatch;
 import static io.trino.sql.planner.plan.Patterns.limit;
 import static io.trino.sql.planner.plan.Patterns.project;
 import static io.trino.sql.planner.plan.Patterns.sort;
@@ -69,6 +70,12 @@ public class MergeLimitOverProjectWithSort
     {
         ProjectNode project = captures.get(PROJECT);
         SortNode sort = captures.get(SORT);
+
+        if (parent.isOrderSensitive()) {
+            verifyMatch(
+                    sort.getOrderingScheme().toLocalProperties(),
+                    parent.getInputOrdering().get().toLocalProperties());
+        }
 
         return Result.ofPlanNode(
                 project.replaceChildren(ImmutableList.of(

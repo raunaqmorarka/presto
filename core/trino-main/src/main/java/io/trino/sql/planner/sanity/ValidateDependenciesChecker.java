@@ -386,6 +386,14 @@ public final class ValidateDependenciesChecker
                         node.getTiesResolvingScheme().get().getOrderBy(), node.getSource().getOutputSymbols());
             }
 
+            if (node.getInputOrdering().isPresent()) {
+                checkDependencies(
+                        createInputs(source, boundSymbols),
+                        node.getInputOrdering().get().getOrderBy(),
+                        "Invalid node. Input ordering dependencies (%s) not in source plan output (%s)",
+                        node.getInputOrdering().get().getOrderBy(), node.getSource().getOutputSymbols());
+            }
+
             return null;
         }
 

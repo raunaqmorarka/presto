@@ -305,7 +305,8 @@ public class SymbolMapper
                 source,
                 node.getCount(),
                 node.getTiesResolvingScheme().map(this::map),
-                node.isPartial());
+                node.isPartial(),
+                node.getInputOrdering().map(this::map));
     }
 
     public OrderingScheme map(OrderingScheme orderingScheme)

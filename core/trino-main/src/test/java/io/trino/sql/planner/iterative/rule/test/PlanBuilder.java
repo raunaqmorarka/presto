@@ -257,6 +257,16 @@ public class PlanBuilder
 
     public LimitNode limit(long limit, List<Symbol> tiesResolvers, PlanNode source)
     {
+        return limit(limit, tiesResolvers, false, Optional.empty(), source);
+    }
+
+    public LimitNode limit(long limit, Optional<OrderingScheme> inputOrderingScheme, PlanNode source)
+    {
+        return limit(limit, ImmutableList.of(), false, inputOrderingScheme, source);
+    }
+
+    public LimitNode limit(long limit, List<Symbol> tiesResolvers, boolean partial, Optional<OrderingScheme> inputOrderingScheme, PlanNode source)
+    {
         Optional<OrderingScheme> tiesResolvingScheme = Optional.empty();
         if (!tiesResolvers.isEmpty()) {
             tiesResolvingScheme = Optional.of(
@@ -269,7 +279,8 @@ public class PlanBuilder
                 source,
                 limit,
                 tiesResolvingScheme,
-                false);
+                partial,
+                inputOrderingScheme);
     }
 
     public TopNNode topN(long count, List<Symbol> orderBy, PlanNode source)

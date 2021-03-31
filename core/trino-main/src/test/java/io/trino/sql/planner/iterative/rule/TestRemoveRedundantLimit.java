@@ -15,12 +15,19 @@ package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import io.trino.sql.planner.OrderingScheme;
 import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.iterative.rule.test.BaseRuleTest;
 import io.trino.sql.planner.plan.AggregationNode;
+import io.trino.sql.planner.plan.FilterNode;
+import io.trino.sql.planner.plan.SortNode;
 import io.trino.sql.planner.plan.ValuesNode;
 import org.testng.annotations.Test;
 
+import java.util.List;
+import java.util.Optional;
+
+import static io.trino.spi.connector.SortOrder.ASC_NULLS_FIRST;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.node;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.values;
@@ -76,6 +83,51 @@ public class TestRemoveRedundantLimit
                                                         expressions("2", "11"))))))
                 // TODO: verify contents
                 .matches(values(ImmutableMap.of()));
+    }
+
+    @Test
+    public void testOrderSensitiveLimit()
+    {
+        tester().assertThat(new RemoveRedundantLimit())
+                .on(p -> {
+                    List<Symbol> orderBy = ImmutableList.of(p.symbol("c"));
+                    return p.limit(
+                            10,
+                            ImmutableList.of(),
+                            true,
+                            Optional.of(
+                                    new OrderingScheme(orderBy, ImmutableMap.of(p.symbol("c"), ASC_NULLS_FIRST))),
+                            p.aggregation(builder -> builder
+                                    .addAggregation(p.symbol("c"), expression("count(foo)"), ImmutableList.of(BIGINT))
+                                    .globalGrouping()
+                                    .source(p.values(p.symbol("foo")))));
+                })
+                .matches(
+                        node(AggregationNode.class,
+                                node(ValuesNode.class)));
+
+        tester().assertThat(new RemoveRedundantLimit())
+                .on(p -> {
+                    List<Symbol> orderBy = ImmutableList.of(p.symbol("a"));
+                    return p.limit(
+                            10,
+                            ImmutableList.of(),
+                            true,
+                            Optional.of(
+                                    new OrderingScheme(orderBy, ImmutableMap.of(p.symbol("a"), ASC_NULLS_FIRST))),
+                            p.filter(
+                                    expression("b > 5"),
+                                    p.values(
+                                            ImmutableList.of(p.symbol("a"), p.symbol("b")),
+                                            ImmutableList.of(
+                                                    expressions("1", "10"),
+                                                    expressions("2", "11")))));
+                })
+                // TODO: verify contents
+                .matches(
+                        node(SortNode.class,
+                                node(FilterNode.class,
+                                        node(ValuesNode.class))));
     }
 
     @Test

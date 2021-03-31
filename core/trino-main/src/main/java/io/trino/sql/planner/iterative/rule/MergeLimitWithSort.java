@@ -22,6 +22,7 @@ import io.trino.sql.planner.plan.SortNode;
 import io.trino.sql.planner.plan.TopNNode;
 
 import static io.trino.matching.Capture.newCapture;
+import static io.trino.sql.planner.optimizations.LocalProperties.verifyMatch;
 import static io.trino.sql.planner.plan.Patterns.limit;
 import static io.trino.sql.planner.plan.Patterns.sort;
 import static io.trino.sql.planner.plan.Patterns.source;
@@ -45,6 +46,12 @@ public class MergeLimitWithSort
     public Result apply(LimitNode parent, Captures captures, Context context)
     {
         SortNode child = captures.get(CHILD);
+
+        if (parent.isOrderSensitive()) {
+            verifyMatch(
+                    child.getOrderingScheme().toLocalProperties(),
+                    parent.getInputOrdering().get().toLocalProperties());
+        }
 
         return Result.ofPlanNode(
                 new TopNNode(

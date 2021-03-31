@@ -21,6 +21,7 @@ import io.trino.sql.planner.plan.LimitNode;
 import io.trino.sql.planner.plan.TopNNode;
 
 import static io.trino.matching.Capture.newCapture;
+import static io.trino.sql.planner.optimizations.LocalProperties.verifyMatch;
 import static io.trino.sql.planner.plan.Patterns.limit;
 import static io.trino.sql.planner.plan.Patterns.source;
 import static io.trino.sql.planner.plan.Patterns.topN;
@@ -67,6 +68,12 @@ public class MergeLimitWithTopN
     public Result apply(LimitNode parent, Captures captures, Context context)
     {
         TopNNode child = captures.get(CHILD);
+
+        if (parent.isOrderSensitive()) {
+            verifyMatch(
+                    child.getOrderingScheme().toLocalProperties(),
+                    parent.getInputOrdering().get().toLocalProperties());
+        }
 
         if (parent.isWithTies()) {
             if (parent.getCount() < child.getCount()) {

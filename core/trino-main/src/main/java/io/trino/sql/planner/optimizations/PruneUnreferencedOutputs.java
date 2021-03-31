@@ -563,9 +563,10 @@ public class PruneUnreferencedOutputs
         {
             ImmutableSet.Builder<Symbol> expectedInputs = ImmutableSet.<Symbol>builder()
                     .addAll(context.get())
-                    .addAll(node.getTiesResolvingScheme().map(OrderingScheme::getOrderBy).orElse(ImmutableList.of()));
+                    .addAll(node.getTiesResolvingScheme().map(OrderingScheme::getOrderBy).orElse(ImmutableList.of()))
+                    .addAll(node.getInputOrdering().map(OrderingScheme::getOrderBy).orElse(ImmutableList.of()));
             PlanNode source = context.rewrite(node.getSource(), expectedInputs.build());
-            return new LimitNode(node.getId(), source, node.getCount(), node.getTiesResolvingScheme(), node.isPartial());
+            return new LimitNode(node.getId(), source, node.getCount(), node.getTiesResolvingScheme(), node.isPartial(), node.getInputOrdering());
         }
 
         @Override

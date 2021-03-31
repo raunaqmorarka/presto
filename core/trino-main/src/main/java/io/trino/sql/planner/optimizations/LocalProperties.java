@@ -13,6 +13,7 @@
  */
 package io.trino.sql.planner.optimizations;
 
+import com.google.common.base.VerifyException;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableSet;
 import com.google.common.collect.PeekingIterator;
@@ -29,6 +30,7 @@ import java.util.Set;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Iterators.peekingIterator;
 
 public final class LocalProperties
@@ -83,6 +85,21 @@ public final class LocalProperties
         }
 
         return builder.build();
+    }
+
+    /**
+     * Verifies that the desired properties match to a sequence of known properties.
+     * Throws VerifyException if the desired properties and not satisfied.
+     */
+    public static <T> void verifyMatch(List<LocalProperty<T>> actuals, List<LocalProperty<T>> desired)
+    {
+        List<LocalProperty<T>> unsatisfiedRequirements = LocalProperties.match(actuals, desired).stream()
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .collect(toImmutableList());
+        if (!unsatisfiedRequirements.isEmpty()) {
+            throw new VerifyException("Unsatisfied local properties: " + unsatisfiedRequirements);
+        }
     }
 
     /**

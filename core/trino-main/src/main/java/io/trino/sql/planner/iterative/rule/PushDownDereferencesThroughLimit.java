@@ -15,9 +15,12 @@ package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.HashBiMap;
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import io.trino.matching.Capture;
 import io.trino.matching.Captures;
 import io.trino.matching.Pattern;
+import io.trino.sql.planner.OrderingScheme;
+import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.TypeAnalyzer;
 import io.trino.sql.planner.iterative.Rule;
 import io.trino.sql.planner.plan.Assignments;
@@ -82,10 +85,14 @@ public class PushDownDereferencesThroughLimit
         // Extract dereferences from project node assignments for pushdown
         Set<DereferenceExpression> dereferences = extractDereferences(projectNode.getAssignments().getExpressions(), false);
 
-        // Exclude dereferences on symbols being used in tiesResolvingScheme
-        if (limitNode.getTiesResolvingScheme().isPresent()) {
+        // Exclude dereferences on symbols being used in tiesResolvingScheme and inputOrdering
+        Set<Symbol> excludedSymbols = ImmutableSet.<Symbol>builder()
+                .addAll(limitNode.getTiesResolvingScheme().map(OrderingScheme::getOrderBy).orElse(ImmutableList.of()))
+                .addAll(limitNode.getInputOrdering().map(OrderingScheme::getOrderBy).orElse(ImmutableList.of()))
+                .build();
+        if (!excludedSymbols.isEmpty()) {
             dereferences = dereferences.stream()
-                    .filter(expression -> !limitNode.getTiesResolvingScheme().get().getOrderBy().contains(getBase(expression)))
+                    .filter(expression -> !excludedSymbols.contains(getBase(expression)))
                     .collect(toImmutableSet());
         }
 

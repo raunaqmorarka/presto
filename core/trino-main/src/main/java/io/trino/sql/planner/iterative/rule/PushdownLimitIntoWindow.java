@@ -20,14 +20,17 @@ import io.trino.matching.Captures;
 import io.trino.matching.Pattern;
 import io.trino.metadata.FunctionId;
 import io.trino.metadata.Metadata;
+import io.trino.spi.connector.LocalProperty;
 import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.iterative.Rule;
+import io.trino.sql.planner.optimizations.LocalProperties;
 import io.trino.sql.planner.plan.LimitNode;
 import io.trino.sql.planner.plan.TopNRankingNode;
 import io.trino.sql.planner.plan.TopNRankingNode.RankingType;
 import io.trino.sql.planner.plan.WindowNode;
 import io.trino.sql.tree.QualifiedName;
 
+import java.util.List;
 import java.util.Optional;
 
 import static com.google.common.collect.Iterables.getOnlyElement;
@@ -78,6 +81,15 @@ public class PushdownLimitIntoWindow
     public Result apply(LimitNode node, Captures captures, Context context)
     {
         WindowNode source = captures.get(childCapture);
+
+        if (node.isOrderSensitive()) {
+            // Do not pushdown Limit with input ordering if ordering scheme is not satisfied by source
+            List<LocalProperty<Symbol>> desiredProperties = node.getInputOrdering().get().toLocalProperties();
+            if (LocalProperties.match(source.getOrderingScheme().get().toLocalProperties(), desiredProperties).stream()
+                    .anyMatch(Optional::isPresent)) {
+                return Result.empty();
+            }
+        }
 
         Optional<RankingType> rankingType = toTopNRankingType(source);
 

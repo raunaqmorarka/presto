@@ -42,6 +42,9 @@ public class PruneLimitColumns
                 .addAll(limitNode.getTiesResolvingScheme()
                         .map(OrderingScheme::getOrderBy)
                         .orElse(ImmutableList.of()))
+                .addAll(limitNode.getInputOrdering()
+                        .map(OrderingScheme::getOrderBy)
+                        .orElse(ImmutableList.of()))
                 .build();
 
         return restrictChildOutputs(context.getIdAllocator(), limitNode, prunedLimitInputs);

@@ -14,13 +14,19 @@
 package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableSet;
 import io.trino.matching.Capture;
 import io.trino.matching.Captures;
 import io.trino.matching.Pattern;
+import io.trino.sql.planner.OrderingScheme;
+import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.iterative.Rule;
 import io.trino.sql.planner.plan.JoinNode;
 import io.trino.sql.planner.plan.LimitNode;
 import io.trino.sql.planner.plan.PlanNode;
+
+import java.util.List;
+import java.util.Optional;
 
 import static io.trino.matching.Capture.newCapture;
 import static io.trino.sql.planner.optimizations.QueryCardinalityUtil.isAtMost;
@@ -75,20 +81,28 @@ public class PushLimitThroughOuterJoin
         PlanNode left = joinNode.getLeft();
         PlanNode right = joinNode.getRight();
 
+        List<Symbol> inputOrderingSymbols = parent.getInputOrdering().map(OrderingScheme::getOrderBy).orElse(ImmutableList.of());
+
         if (joinNode.getType() == LEFT && !isAtMost(left, context.getLookup(), parent.getCount())) {
+            if (parent.isOrderSensitive() && !ImmutableSet.copyOf(left.getOutputSymbols()).containsAll(inputOrderingSymbols)) {
+                return Result.empty();
+            }
             return Result.ofPlanNode(
                     parent.replaceChildren(ImmutableList.of(
                             joinNode.replaceChildren(ImmutableList.of(
-                                    new LimitNode(context.getIdAllocator().getNextId(), left, parent.getCount(), true),
+                                    new LimitNode(context.getIdAllocator().getNextId(), left, parent.getCount(), Optional.empty(), true, parent.getInputOrdering()),
                                     right)))));
         }
 
         if (joinNode.getType() == RIGHT && !isAtMost(right, context.getLookup(), parent.getCount())) {
+            if (parent.isOrderSensitive() && !ImmutableSet.copyOf(right.getOutputSymbols()).containsAll(inputOrderingSymbols)) {
+                return Result.empty();
+            }
             return Result.ofPlanNode(
                     parent.replaceChildren(ImmutableList.of(
                             joinNode.replaceChildren(ImmutableList.of(
                                     left,
-                                    new LimitNode(context.getIdAllocator().getNextId(), right, parent.getCount(), true))))));
+                                    new LimitNode(context.getIdAllocator().getNextId(), right, parent.getCount(), Optional.empty(), true, parent.getInputOrdering()))))));
         }
 
         return Result.empty();

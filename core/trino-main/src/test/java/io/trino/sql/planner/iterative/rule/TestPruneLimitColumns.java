@@ -15,6 +15,7 @@ package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
+import io.trino.sql.planner.OrderingScheme;
 import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.iterative.rule.test.BaseRuleTest;
 import io.trino.sql.planner.iterative.rule.test.PlanBuilder;
@@ -22,11 +23,14 @@ import io.trino.sql.planner.plan.Assignments;
 import io.trino.sql.planner.plan.ProjectNode;
 import org.testng.annotations.Test;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import static com.google.common.base.Predicates.alwaysTrue;
 import static com.google.common.collect.ImmutableSet.toImmutableSet;
+import static io.trino.spi.connector.SortOrder.ASC_NULLS_FIRST;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.expression;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.limit;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.sort;
@@ -77,6 +81,34 @@ public class TestPruneLimitColumns
                                 ImmutableMap.of(),
                                 limit(
                                         1,
+                                        ImmutableList.of(sort("a", ASCENDING, FIRST)),
+                                        strictProject(
+                                                ImmutableMap.of("a", expression("a")),
+                                                values("a", "b")))));
+    }
+
+    @Test
+    public void testDoNotPruneInputOrderingSymbols()
+    {
+        tester().assertThat(new PruneLimitColumns())
+                .on(p -> {
+                    Symbol a = p.symbol("a");
+                    Symbol b = p.symbol("b");
+                    List<Symbol> orderBy = ImmutableList.of(a);
+                    return p.project(
+                            Assignments.of(),
+                            p.limit(
+                                    1,
+                                    Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(a, ASC_NULLS_FIRST))),
+                                    p.values(a, b)));
+                })
+                .matches(
+                        strictProject(
+                                ImmutableMap.of(),
+                                limit(
+                                        1,
+                                        ImmutableList.of(),
+                                        false,
                                         ImmutableList.of(sort("a", ASCENDING, FIRST)),
                                         strictProject(
                                                 ImmutableMap.of("a", expression("a")),

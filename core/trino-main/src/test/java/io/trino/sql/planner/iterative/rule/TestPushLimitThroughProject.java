@@ -16,6 +16,7 @@ package io.trino.sql.planner.iterative.rule;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.trino.spi.type.RowType;
+import io.trino.sql.planner.OrderingScheme;
 import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.assertions.ExpressionMatcher;
 import io.trino.sql.planner.iterative.rule.test.BaseRuleTest;
@@ -26,8 +27,10 @@ import io.trino.sql.tree.Identifier;
 import io.trino.sql.tree.SymbolReference;
 import org.testng.annotations.Test;
 
+import java.util.List;
 import java.util.Optional;
 
+import static io.trino.spi.connector.SortOrder.ASC_NULLS_FIRST;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.expression;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.limit;
@@ -156,6 +159,52 @@ public class TestPushLimitThroughProject
                                     p.values(a)));
                 })
                 .doesNotFire();
+    }
+
+    @Test
+    public void testOrderSensitiveLimit()
+    {
+        // Do not push down order sensitive Limit if input ordering depends on symbol produced by Project
+        tester().assertThat(new PushLimitThroughProject())
+                .on(p -> {
+                    Symbol projectedA = p.symbol("projectedA");
+                    Symbol a = p.symbol("a");
+                    Symbol projectedC = p.symbol("projectedC");
+                    Symbol b = p.symbol("b");
+                    List<Symbol> orderBy = ImmutableList.of(projectedC);
+                    return p.limit(
+                            1,
+                            Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(projectedC, ASC_NULLS_FIRST))),
+                            p.project(
+                                    Assignments.of(
+                                            projectedA, new SymbolReference("a"),
+                                            projectedC, new ArithmeticBinaryExpression(ADD, new SymbolReference("a"), new SymbolReference("b"))),
+                                    p.values(a, b)));
+                })
+                .doesNotFire();
+
+        tester().assertThat(new PushLimitThroughProject())
+                .on(p -> {
+                    Symbol projectedA = p.symbol("projectedA");
+                    Symbol a = p.symbol("a");
+                    Symbol projectedC = p.symbol("projectedC");
+                    Symbol b = p.symbol("b");
+                    List<Symbol> orderBy = ImmutableList.of(projectedA);
+                    return p.limit(
+                            1,
+                            ImmutableList.of(),
+                            true,
+                            Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(projectedA, ASC_NULLS_FIRST))),
+                            p.project(
+                                    Assignments.of(
+                                            projectedA, new SymbolReference("a"),
+                                            projectedC, new ArithmeticBinaryExpression(ADD, new SymbolReference("a"), new SymbolReference("b"))),
+                                    p.values(a, b)));
+                })
+                .matches(
+                        project(
+                                ImmutableMap.of("projectedA", new ExpressionMatcher("a"), "projectedC", new ExpressionMatcher("a + b")),
+                                limit(1, ImmutableList.of(), true, ImmutableList.of(sort("a", ASCENDING, FIRST)), values("a", "b"))));
     }
 
     @Test

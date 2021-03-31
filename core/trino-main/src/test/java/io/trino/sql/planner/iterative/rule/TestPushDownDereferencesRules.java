@@ -25,6 +25,7 @@ import io.trino.spi.type.ArrayType;
 import io.trino.spi.type.RowType;
 import io.trino.spi.type.Type;
 import io.trino.sql.planner.OrderingScheme;
+import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.assertions.ExpressionMatcher;
 import io.trino.sql.planner.assertions.PlanMatchPattern;
 import io.trino.sql.planner.iterative.rule.test.BaseRuleTest;
@@ -38,6 +39,7 @@ import io.trino.sql.tree.WindowFrame;
 import io.trino.testing.TestingTransactionHandle;
 import org.testng.annotations.Test;
 
+import java.util.List;
 import java.util.Optional;
 
 import static com.google.common.base.Predicates.equalTo;
@@ -380,6 +382,47 @@ public class TestPushDownDereferencesRules
                                         .build(),
                                 limit(
                                         10,
+                                        ImmutableList.of(sort("msg2", ASCENDING, FIRST)),
+                                        strictProject(
+                                                ImmutableMap.<String, ExpressionMatcher>builder()
+                                                        .put("x", PlanMatchPattern.expression("msg1.x"))
+                                                        .put("z", PlanMatchPattern.expression("z"))
+                                                        .put("msg1", PlanMatchPattern.expression("msg1"))
+                                                        .put("msg2", PlanMatchPattern.expression("msg2"))
+                                                        .build(),
+                                                values("msg1", "msg2", "z")))));
+    }
+
+    @Test
+    public void testPushDownDereferenceThroughOrderSensitiveLimit()
+    {
+        tester().assertThat(new PushDownDereferencesThroughLimit(tester().getTypeAnalyzer()))
+                .on(p -> {
+                    List<Symbol> orderBy = ImmutableList.of(p.symbol("msg2", ROW_TYPE));
+                    return p.project(
+                            Assignments.builder()
+                                    .put(p.symbol("msg1_x"), expression("msg1.x"))
+                                    .put(p.symbol("msg2_y"), expression("msg2.y"))
+                                    .put(p.symbol("z"), expression("z"))
+                                    .build(),
+                            p.limit(
+                                    10,
+                                    Optional.of(new OrderingScheme(
+                                            orderBy,
+                                            ImmutableMap.of(p.symbol("msg2", ROW_TYPE), ASC_NULLS_FIRST))),
+                                    p.values(p.symbol("msg1", ROW_TYPE), p.symbol("msg2", ROW_TYPE), p.symbol("z"))));
+                })
+                .matches(
+                        strictProject(
+                                ImmutableMap.<String, ExpressionMatcher>builder()
+                                        .put("msg1_x", PlanMatchPattern.expression("x"))
+                                        .put("msg2_y", PlanMatchPattern.expression("msg2.y"))
+                                        .put("z", PlanMatchPattern.expression("z"))
+                                        .build(),
+                                limit(
+                                        10,
+                                        ImmutableList.of(),
+                                        false,
                                         ImmutableList.of(sort("msg2", ASCENDING, FIRST)),
                                         strictProject(
                                                 ImmutableMap.<String, ExpressionMatcher>builder()

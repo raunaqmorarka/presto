@@ -14,10 +14,16 @@
 package io.trino.sql.planner.iterative.rule;
 
 import com.google.common.collect.ImmutableList;
+import com.google.common.collect.ImmutableMap;
+import io.trino.sql.planner.OrderingScheme;
 import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.iterative.rule.test.BaseRuleTest;
 import org.testng.annotations.Test;
 
+import java.util.List;
+import java.util.Optional;
+
+import static io.trino.spi.connector.SortOrder.ASC_NULLS_FIRST;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.sort;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.topN;
 import static io.trino.sql.planner.assertions.PlanMatchPattern.values;
@@ -60,5 +66,21 @@ public class TestMergeLimitWithSort
                                     p.values(a)));
                 })
                 .doesNotFire();
+    }
+
+    @Test
+    public void testOrderSensitiveLimit()
+    {
+        tester().assertThat(new MergeLimitWithSort())
+                .on(p -> {
+                    Symbol a = p.symbol("a");
+                    List<Symbol> orderBy = ImmutableList.of(a);
+                    return p.limit(
+                            2,
+                            Optional.of(new OrderingScheme(orderBy, ImmutableMap.of(a, ASC_NULLS_FIRST))),
+                            p.sort(orderBy, p.values(a)));
+                })
+                .matches(
+                        topN(2, ImmutableList.of(sort("a", ASCENDING, FIRST)), values("a")));
     }
 }
