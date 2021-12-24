@@ -159,26 +159,38 @@ public class VariableWidthBlock
     {
         checkArrayRange(positions, offset, length);
 
-        int finalLength = 0;
-        for (int i = offset; i < offset + length; i++) {
-            finalLength += getSliceLength(positions[i]);
-        }
-        SliceOutput newSlice = Slices.allocate(finalLength).getOutput();
         int[] newOffsets = new int[length + 1];
-        boolean[] newValueIsNull = null;
-        if (valueIsNull != null) {
-            newValueIsNull = new boolean[length];
-        }
-
+        int finalLength = 0;
         for (int i = 0; i < length; i++) {
             int position = positions[offset + i];
-            if (!isEntryNull(position)) {
-                newSlice.writeBytes(slice, getPositionOffset(position), getSliceLength(position));
+            finalLength += getSliceLength(position);
+            newOffsets[i + 1] = finalLength;
+        }
+
+        SliceOutput newSlice = Slices.allocate(finalLength).getOutput();
+        boolean[] newValueIsNull = null;
+        if (length > 0) {
+            if (valueIsNull != null) {
+                newValueIsNull = new boolean[length];
+                newValueIsNull[0] = valueIsNull[positions[offset] + arrayOffset];
             }
-            else if (newValueIsNull != null) {
-                newValueIsNull[i] = true;
+            int currentStart = getPositionOffset(positions[offset]);
+            int currentEnd = getPositionOffset(positions[offset] + 1);
+            for (int i = 1; i < length; i++) {
+                int position = positions[offset + i];
+                int currentOffset = getPositionOffset(position);
+                if (currentOffset - currentEnd != 0) {
+                    // Copy last continuous range of bytes and update currentStart to start new range
+                    newSlice.writeBytes(slice, currentStart, currentEnd - currentStart);
+                    currentStart = currentOffset;
+                }
+                currentEnd = getPositionOffset(position + 1);
+                if (valueIsNull != null) {
+                    newValueIsNull[i] = valueIsNull[position + arrayOffset];
+                }
             }
-            newOffsets[i + 1] = newSlice.size();
+            // Copy last range of bytes
+            newSlice.writeBytes(slice, currentStart, currentEnd - currentStart);
         }
         return new VariableWidthBlock(0, length, newSlice.slice(), newOffsets, newValueIsNull);
     }
