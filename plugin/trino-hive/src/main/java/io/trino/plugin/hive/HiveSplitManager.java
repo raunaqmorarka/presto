@@ -29,6 +29,8 @@ import io.trino.plugin.hive.metastore.SortingColumn;
 import io.trino.plugin.hive.metastore.Table;
 import io.trino.plugin.hive.util.HiveBucketing.HiveBucketFilter;
 import io.trino.plugin.hive.util.HiveUtil;
+import io.trino.plugin.hive.util.NodeProvider;
+import io.trino.plugin.hive.util.NoneNodeProvider;
 import io.trino.spi.TrinoException;
 import io.trino.spi.VersionEmbedder;
 import io.trino.spi.connector.ConnectorSession;
@@ -74,6 +76,7 @@ import static io.trino.plugin.hive.HiveSessionProperties.isOptimizeSymlinkListin
 import static io.trino.plugin.hive.HiveSessionProperties.isPropagateTableScanSortingProperties;
 import static io.trino.plugin.hive.HiveSessionProperties.isUseOrcColumnNames;
 import static io.trino.plugin.hive.HiveSessionProperties.isUseParquetColumnNames;
+import static io.trino.plugin.hive.HiveStorageFormat.PARQUET;
 import static io.trino.plugin.hive.HiveStorageFormat.getHiveStorageFormat;
 import static io.trino.plugin.hive.TableToPartitionMapping.mapColumnsByIndex;
 import static io.trino.plugin.hive.metastore.MetastoreUtil.getProtectMode;
@@ -111,6 +114,7 @@ public class HiveSplitManager
     private final boolean recursiveDfsWalkerEnabled;
     private final CounterStat highMemorySplitSourceCounter;
     private final TypeManager typeManager;
+    private final NodeProvider nodeProvider;
 
     @Inject
     public HiveSplitManager(
@@ -122,7 +126,8 @@ public class HiveSplitManager
             DirectoryLister directoryLister,
             ExecutorService executorService,
             VersionEmbedder versionEmbedder,
-            TypeManager typeManager)
+            TypeManager typeManager,
+            NodeProvider nodeProvider)
     {
         this(
                 metastoreProvider,
@@ -140,7 +145,8 @@ public class HiveSplitManager
                 hiveConfig.getSplitLoaderConcurrency(),
                 hiveConfig.getMaxSplitsPerSecond(),
                 hiveConfig.getRecursiveDirWalkerEnabled(),
-                typeManager);
+                typeManager,
+                nodeProvider);
     }
 
     public HiveSplitManager(
@@ -159,7 +165,8 @@ public class HiveSplitManager
             int splitLoaderConcurrency,
             @Nullable Integer maxSplitsPerSecond,
             boolean recursiveDfsWalkerEnabled,
-            TypeManager typeManager)
+            TypeManager typeManager,
+            NodeProvider nodeProvider)
     {
         this.metastoreProvider = requireNonNull(metastoreProvider, "metastoreProvider is null");
         this.partitionManager = requireNonNull(partitionManager, "partitionManager is null");
@@ -178,6 +185,7 @@ public class HiveSplitManager
         this.maxSplitsPerSecond = firstNonNull(maxSplitsPerSecond, Integer.MAX_VALUE);
         this.recursiveDfsWalkerEnabled = recursiveDfsWalkerEnabled;
         this.typeManager = requireNonNull(typeManager, "typeManager is null");
+        this.nodeProvider = requireNonNull(nodeProvider, "nodeProvider is null");
     }
 
     @Override
@@ -229,6 +237,11 @@ public class HiveSplitManager
 
         // Only one thread per partition is usable when a table is not transactional
         int concurrency = isTransactionalTable(table.getParameters()) ? splitLoaderConcurrency : min(splitLoaderConcurrency, partitions.size());
+        Optional<HiveStorageFormat> storageFormat = getHiveStorageFormat(table.getStorage().getStorageFormat());
+        NodeProvider nodeProvider = this.nodeProvider;
+        if (!storageFormat.equals(Optional.of(PARQUET))) {
+            nodeProvider = new NoneNodeProvider();
+        }
         HiveSplitLoader hiveSplitLoader = new BackgroundHiveSplitLoader(
                 table,
                 hiveTable.getTransaction(),
@@ -249,7 +262,8 @@ public class HiveSplitManager
                 isOptimizeSymlinkListing(session),
                 metastore.getValidWriteIds(session, hiveTable)
                         .map(validTxnWriteIdList -> validTxnWriteIdList.getTableValidWriteIdList(table.getDatabaseName() + "." + table.getTableName())),
-                hiveTable.getMaxScannedFileSize());
+                hiveTable.getMaxScannedFileSize(),
+                nodeProvider);
 
         HiveSplitSource splitSource;
         switch (splitSchedulingStrategy) {

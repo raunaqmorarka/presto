@@ -35,6 +35,7 @@ import io.trino.plugin.hive.util.HiveBucketing.BucketingVersion;
 import io.trino.plugin.hive.util.HiveBucketing.HiveBucketFilter;
 import io.trino.plugin.hive.util.HiveFileIterator;
 import io.trino.plugin.hive.util.InternalHiveSplitFactory;
+import io.trino.plugin.hive.util.NodeProvider;
 import io.trino.plugin.hive.util.ResumableTask;
 import io.trino.plugin.hive.util.ResumableTasks;
 import io.trino.spi.TrinoException;
@@ -166,6 +167,7 @@ public class BackgroundHiveSplitLoader
     private final Deque<Iterator<InternalHiveSplit>> fileIterators = new ConcurrentLinkedDeque<>();
     private final Optional<ValidWriteIdList> validWriteIds;
     private final Optional<Long> maxSplitFileSize;
+    private final NodeProvider nodeProvider;
 
     // Purpose of this lock:
     // * Write lock: when you need a consistent view across partitions, fileIterators, and hiveSplitSource.
@@ -207,7 +209,8 @@ public class BackgroundHiveSplitLoader
             boolean ignoreAbsentPartitions,
             boolean optimizeSymlinkListing,
             Optional<ValidWriteIdList> validWriteIds,
-            Optional<Long> maxSplitFileSize)
+            Optional<Long> maxSplitFileSize,
+            NodeProvider nodeProvider)
     {
         this.table = table;
         this.transaction = requireNonNull(transaction, "transaction is null");
@@ -230,6 +233,7 @@ public class BackgroundHiveSplitLoader
         this.hdfsContext = new HdfsContext(session);
         this.validWriteIds = requireNonNull(validWriteIds, "validWriteIds is null");
         this.maxSplitFileSize = requireNonNull(maxSplitFileSize, "maxSplitFileSize is null");
+        this.nodeProvider = requireNonNull(nodeProvider, "nodeProvider is null");
     }
 
     @Override
@@ -476,7 +480,8 @@ public class BackgroundHiveSplitLoader
                 isForceLocalScheduling(session),
                 s3SelectPushdownEnabled,
                 transaction,
-                maxSplitFileSize);
+                maxSplitFileSize,
+                nodeProvider);
 
         // To support custom input formats, we want to call getSplits()
         // on the input format to obtain file splits.
@@ -665,7 +670,8 @@ public class BackgroundHiveSplitLoader
                     isForceLocalScheduling(session),
                     s3SelectPushdownEnabled,
                     transaction,
-                    maxSplitFileSize);
+                    maxSplitFileSize,
+                    nodeProvider);
             lastResult = addSplitsToSource(targetSplits, splitFactory);
             if (stopped) {
                 return COMPLETED_FUTURE;
@@ -722,7 +728,8 @@ public class BackgroundHiveSplitLoader
                 isForceLocalScheduling(session),
                 s3SelectPushdownEnabled,
                 transaction,
-                maxSplitFileSize);
+                maxSplitFileSize,
+                nodeProvider);
         return Optional.of(locatedFileStatuses.stream()
                 .map(locatedFileStatus -> splitFactory.createInternalHiveSplit(locatedFileStatus, OptionalInt.empty(), splittable, Optional.empty()))
                 .filter(Optional::isPresent)

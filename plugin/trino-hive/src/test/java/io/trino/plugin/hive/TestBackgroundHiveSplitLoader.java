@@ -116,6 +116,7 @@ import static io.trino.plugin.hive.HiveType.HIVE_STRING;
 import static io.trino.plugin.hive.acid.AcidTransaction.NO_ACID_TRANSACTION;
 import static io.trino.plugin.hive.util.HiveBucketing.BucketingVersion.BUCKETING_V1;
 import static io.trino.plugin.hive.util.HiveUtil.getRegularColumnHandles;
+import static io.trino.plugin.hive.util.NoneNodeProvider.NONE_NODE_PROVIDER;
 import static io.trino.spi.connector.NotPartitionedPartitionHandle.NOT_PARTITIONED;
 import static io.trino.spi.predicate.TupleDomain.withColumnDomains;
 import static io.trino.spi.type.IntegerType.INTEGER;
@@ -553,7 +554,8 @@ public class TestBackgroundHiveSplitLoader
                 false,
                 true,
                 Optional.empty(),
-                Optional.empty());
+                Optional.empty(),
+                NONE_NODE_PROVIDER);
 
         HiveSplitSource hiveSplitSource = hiveSplitSource(backgroundHiveSplitLoader);
         backgroundHiveSplitLoader.start(hiveSplitSource);
@@ -1086,7 +1088,8 @@ public class TestBackgroundHiveSplitLoader
                 false,
                 true,
                 validWriteIds,
-                Optional.empty());
+                Optional.empty(),
+                NONE_NODE_PROVIDER);
     }
 
     private BackgroundHiveSplitLoader backgroundHiveSplitLoader(List<LocatedFileStatus> files, DirectoryLister directoryLister)
@@ -1119,7 +1122,8 @@ public class TestBackgroundHiveSplitLoader
                 false,
                 true,
                 Optional.empty(),
-                Optional.empty());
+                Optional.empty(),
+                NONE_NODE_PROVIDER);
     }
 
     private static BackgroundHiveSplitLoader backgroundHiveSplitLoaderOfflinePartitions()
@@ -1146,7 +1150,8 @@ public class TestBackgroundHiveSplitLoader
                 false,
                 true,
                 Optional.empty(),
-                Optional.empty());
+                Optional.empty(),
+                NONE_NODE_PROVIDER);
     }
 
     private static Iterable<HivePartitionMetadata> createPartitionMetadataWithOfflinePartitions()

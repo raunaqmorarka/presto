@@ -48,6 +48,7 @@ import java.util.Properties;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BooleanSupplier;
+import java.util.stream.Stream;
 
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableList.toImmutableList;
@@ -72,6 +73,7 @@ public class InternalHiveSplitFactory
     private final Optional<Long> maxSplitFileSize;
     private final boolean forceLocalScheduling;
     private final boolean s3SelectPushdownEnabled;
+    private final NodeProvider nodeProvider;
     private final Map<Integer, AtomicInteger> bucketStatementCounters = new ConcurrentHashMap<>();
 
     public InternalHiveSplitFactory(
@@ -89,7 +91,8 @@ public class InternalHiveSplitFactory
             boolean forceLocalScheduling,
             boolean s3SelectPushdownEnabled,
             AcidTransaction transaction,
-            Optional<Long> maxSplitFileSize)
+            Optional<Long> maxSplitFileSize,
+            NodeProvider nodeProvider)
     {
         this.fileSystem = requireNonNull(fileSystem, "fileSystem is null");
         this.partitionName = requireNonNull(partitionName, "partitionName is null");
@@ -106,6 +109,7 @@ public class InternalHiveSplitFactory
         this.minimumTargetSplitSizeInBytes = requireNonNull(minimumTargetSplitSize, "minimumTargetSplitSize is null").toBytes();
         this.maxSplitFileSize = requireNonNull(maxSplitFileSize, "maxSplitFileSize is null");
         checkArgument(minimumTargetSplitSizeInBytes > 0, "minimumTargetSplitSize must be > 0, found: %s", minimumTargetSplitSize);
+        this.nodeProvider = requireNonNull(nodeProvider, "nodeProvider is null");
     }
 
     public String getPartitionName()
@@ -189,6 +193,7 @@ public class InternalHiveSplitFactory
             forceLocalScheduling = false;
         }
 
+        Optional<HostAddress> preferredNode = nodeProvider.getHost(pathString);
         ImmutableList.Builder<InternalHiveBlock> blockBuilder = ImmutableList.builder();
         for (BlockLocation blockLocation : blockLocations) {
             // clamp the block range
@@ -202,7 +207,11 @@ public class InternalHiveSplitFactory
                 // skip zero-width block, except in the special circumstance: slice is empty, and the block covers the empty slice interval.
                 continue;
             }
-            blockBuilder.add(new InternalHiveBlock(blockStart, blockEnd, getHostAddresses(blockLocation)));
+            List<HostAddress> addresses = Stream.concat(
+                            preferredNode.stream(),
+                            getHostAddresses(blockLocation).stream())
+                    .collect(toImmutableList());
+            blockBuilder.add(new InternalHiveBlock(blockStart, blockEnd, addresses));
         }
         List<InternalHiveBlock> blocks = blockBuilder.build();
         checkBlocks(path, blocks, start, length);
