@@ -44,6 +44,7 @@ public class RunLengthEncodedBlock
 
     private final Block value;
     private final int positionCount;
+    private final boolean isNull;
 
     public RunLengthEncodedBlock(Block value, int positionCount)
     {
@@ -64,6 +65,7 @@ public class RunLengthEncodedBlock
         }
 
         this.positionCount = positionCount;
+        this.isNull = positionCount > 0 && value.isNull(0);
     }
 
     @Override
@@ -274,14 +276,17 @@ public class RunLengthEncodedBlock
     @Override
     public boolean mayHaveNull()
     {
-        return positionCount > 0 && value.isNull(0);
+        return isNull;
     }
 
     @Override
     public boolean isNull(int position)
     {
+        if (!isNull) {
+            return false;
+        }
         checkReadablePosition(position);
-        return value.isNull(0);
+        return true;
     }
 
     @Override
