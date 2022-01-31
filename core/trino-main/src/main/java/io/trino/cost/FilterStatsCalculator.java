@@ -14,6 +14,7 @@
 package io.trino.cost;
 
 import com.google.common.base.VerifyException;
+import com.google.common.collect.ArrayListMultimap;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.ImmutableMap;
 import io.trino.Session;
@@ -48,7 +49,6 @@ import io.trino.sql.tree.SymbolReference;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 
-import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -77,6 +77,7 @@ import static java.lang.Double.isNaN;
 import static java.lang.Double.min;
 import static java.lang.String.format;
 import static java.util.Objects.requireNonNull;
+import static java.util.stream.Stream.concat;
 
 public class FilterStatsCalculator
 {
@@ -169,35 +170,87 @@ public class FilterStatsCalculator
 
         private PlanNodeStatsEstimate estimateLogicalAnd(List<Expression> terms)
         {
-            // first try to estimate in the fair way
-            PlanNodeStatsEstimate estimate = process(terms.get(0));
-            if (!estimate.isOutputRowCountUnknown()) {
-                for (int i = 1; i < terms.size(); i++) {
-                    estimate = new FilterExpressionStatsCalculatingVisitor(estimate, session, types).process(terms.get(i));
-
-                    if (estimate.isOutputRowCountUnknown()) {
-                        break;
-                    }
-                }
-
-                if (!estimate.isOutputRowCountUnknown()) {
-                    return estimate;
+            // Find the smallest known estimate
+            List<PlanNodeStatsEstimate> estimates = estimateExpressionsGroupedBySymbolReference(terms);
+            int smallestEstimateIndex = -1;
+            PlanNodeStatsEstimate smallest = PlanNodeStatsEstimate.unknown();
+            for (int i = 0; i < estimates.size(); i++) {
+                PlanNodeStatsEstimate estimate = estimates.get(i);
+                if (smallest.isOutputRowCountUnknown() || (!estimate.isOutputRowCountUnknown() && estimate.getOutputRowCount() < smallest.getOutputRowCount())) {
+                    smallest = estimate;
+                    smallestEstimateIndex = i;
                 }
             }
 
-            // If some of the filters cannot be estimated, take the smallest estimate.
-            // Apply 0.9 filter factor as "unknown filter" factor.
-            Optional<PlanNodeStatsEstimate> smallest = terms.stream()
-                    .map(this::process)
-                    .filter(termEstimate -> !termEstimate.isOutputRowCountUnknown())
-                    .sorted(Comparator.comparingDouble(PlanNodeStatsEstimate::getOutputRowCount))
-                    .findFirst();
-
-            if (smallest.isEmpty()) {
+            if (smallest.isOutputRowCountUnknown()) {
                 return PlanNodeStatsEstimate.unknown();
             }
 
-            return smallest.get().mapOutputRowCount(rowCount -> rowCount * UNKNOWN_FILTER_COEFFICIENT);
+            PlanNodeStatsEstimate combinedEstimate = smallest;
+            for (int i = 0; i < estimates.size(); i++) {
+                if (i == smallestEstimateIndex) {
+                    continue;
+                }
+                PlanNodeStatsEstimate.Builder result = PlanNodeStatsEstimate.builder();
+                // Scale output row count by 0.9 for every additional term
+                result.setOutputRowCount(combinedEstimate.getOutputRowCount() * UNKNOWN_FILTER_COEFFICIENT);
+                PlanNodeStatsEstimate termEstimate = estimates.get(i);
+                PlanNodeStatsEstimate finalCombinedEstimate = combinedEstimate;
+                // Update statistic range for symbols
+                concat(combinedEstimate.getSymbolsWithKnownStatistics().stream(), termEstimate.getSymbolsWithKnownStatistics().stream())
+                        .distinct()
+                        .forEach(symbol -> {
+                            SymbolStatsEstimate termSymbolStats = termEstimate.getSymbolStatistics(symbol);
+                            SymbolStatsEstimate combinedSymbolStats = finalCombinedEstimate.getSymbolStatistics(symbol);
+
+                            StatisticRange termRange = StatisticRange.from(termSymbolStats);
+                            StatisticRange combinedRange = StatisticRange.from(combinedSymbolStats);
+
+                            StatisticRange intersect = termRange.intersect(combinedRange);
+                            result.addSymbolStatistics(symbol, SymbolStatsEstimate.buildFrom(combinedSymbolStats)
+                                    .setStatisticsRange(intersect)
+                                    .build());
+                        });
+                combinedEstimate = normalizer.normalize(result.build(), types);
+            }
+
+            return combinedEstimate;
+        }
+
+        private List<PlanNodeStatsEstimate> estimateExpressionsGroupedBySymbolReference(List<Expression> terms)
+        {
+            ArrayListMultimap<SymbolReference, Expression> symbolExpressions = ArrayListMultimap.create();
+            ImmutableList.Builder<PlanNodeStatsEstimate> estimatesBuilder = ImmutableList.builder();
+            for (Expression expression : terms) {
+                if (expression instanceof ComparisonExpression) {
+                    ComparisonExpression comparisonExpression = (ComparisonExpression) expression;
+                    if (comparisonExpression.getLeft() instanceof SymbolReference) {
+                        // group comparison expressions by common symbol references
+                        symbolExpressions.put((SymbolReference) comparisonExpression.getLeft(), expression);
+                        continue;
+                    }
+                }
+                estimatesBuilder.add(process(expression));
+            }
+
+            for (SymbolReference symbolReference : symbolExpressions.keySet()) {
+                // calculate a combined estimate for each group so that we don't end up
+                // picking estimate from just one of the predicates in a BETWEEN clause
+                // or multiple range in-equalities on a symbol
+                List<Expression> expressions = symbolExpressions.get(symbolReference);
+                PlanNodeStatsEstimate estimate = process(expressions.get(0));
+                if (!estimate.isOutputRowCountUnknown()) {
+                    for (int i = 1; i < expressions.size(); i++) {
+                        estimate = new FilterExpressionStatsCalculatingVisitor(estimate, session, types).process(expressions.get(i));
+
+                        if (estimate.isOutputRowCountUnknown()) {
+                            break;
+                        }
+                    }
+                }
+                estimatesBuilder.add(estimate);
+            }
+            return estimatesBuilder.build();
         }
 
         private PlanNodeStatsEstimate estimateLogicalOr(List<Expression> terms)
