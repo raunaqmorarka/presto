@@ -257,23 +257,6 @@ public class TestFilterStatsCalculator
     @Test
     public void testAndStats()
     {
-        assertExpression("x < 0e0 AND x > 1e0").equalTo(zeroStatistics);
-
-        assertExpression("x < 0e0 AND x > DOUBLE '-7.5'")
-                .outputRowsCount(281.25)
-                .symbolStats(new Symbol("x"), symbolAssert ->
-                        symbolAssert.averageRowSize(4.0)
-                                .lowValue(-7.5)
-                                .highValue(0.0)
-                                .distinctValuesCount(15.0)
-                                .nullsFraction(0.0));
-
-        // Impossible, with symbol-to-expression comparisons
-        assertExpression("x = (0e0 + 1e0) AND x = (0e0 + 3e0)")
-                .outputRowsCount(0)
-                .symbolStats(new Symbol("x"), SymbolStatsAssertion::emptyRange)
-                .symbolStats(new Symbol("y"), SymbolStatsAssertion::emptyRange);
-
         // first argument unknown
         assertExpression("json_array_contains(JSON '[]', x) AND x < 0e0")
                 .outputRowsCount(337.5)
@@ -282,25 +265,6 @@ public class TestFilterStatsCalculator
                                 .highValue(0)
                                 .distinctValuesCount(20)
                                 .nullsFraction(0));
-
-        // second argument unknown
-        assertExpression("x < 0e0 AND json_array_contains(JSON '[]', x)")
-                .outputRowsCount(337.5)
-                .symbolStats(new Symbol("x"), symbolAssert ->
-                        symbolAssert.lowValue(-10)
-                                .highValue(0)
-                                .distinctValuesCount(20)
-                                .nullsFraction(0));
-
-        // both arguments unknown
-        assertExpression("json_array_contains(JSON '[11]', x) AND json_array_contains(JSON '[13]', x)")
-                .outputRowsCountUnknown();
-
-        assertExpression("'a' IN ('b', 'c') AND unknownRange = 3e0")
-                .outputRowsCount(0);
-
-        assertExpression("CAST(NULL AS boolean) AND CAST(NULL AS boolean)").equalTo(zeroStatistics);
-        assertExpression("CAST(NULL AS boolean) AND (x < 0e0 AND x > 1e0)").equalTo(zeroStatistics);
     }
 
     @Test

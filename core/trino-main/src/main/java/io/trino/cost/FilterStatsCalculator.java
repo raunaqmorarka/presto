@@ -49,6 +49,7 @@ import io.trino.sql.tree.SymbolReference;
 import javax.annotation.Nullable;
 import javax.inject.Inject;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -170,31 +171,29 @@ public class FilterStatsCalculator
 
         private PlanNodeStatsEstimate estimateLogicalAnd(List<Expression> terms)
         {
-            // Find the smallest known estimate
+            // Find the smallest 4 known estimates
             List<PlanNodeStatsEstimate> estimates = estimateExpressionsGroupedBySymbolReference(terms);
-            int smallestEstimateIndex = -1;
-            PlanNodeStatsEstimate smallest = PlanNodeStatsEstimate.unknown();
-            for (int i = 0; i < estimates.size(); i++) {
-                PlanNodeStatsEstimate estimate = estimates.get(i);
-                if (smallest.isOutputRowCountUnknown() || (!estimate.isOutputRowCountUnknown() && estimate.getOutputRowCount() < smallest.getOutputRowCount())) {
-                    smallest = estimate;
-                    smallestEstimateIndex = i;
-                }
-            }
+            List<PlanNodeStatsEstimate> smallestEstimates = estimates.stream()
+                    .filter(estimate -> !estimate.isOutputRowCountUnknown())
+                    .sorted(Comparator.comparingDouble(PlanNodeStatsEstimate::getOutputRowCount))
+                    .limit(4)
+                    .collect(toImmutableList());
 
-            if (smallest.isOutputRowCountUnknown()) {
+            if (smallestEstimates.isEmpty()) {
                 return PlanNodeStatsEstimate.unknown();
             }
 
-            PlanNodeStatsEstimate combinedEstimate = smallest;
-            for (int i = 0; i < estimates.size(); i++) {
-                if (i == smallestEstimateIndex) {
-                    continue;
-                }
-                PlanNodeStatsEstimate.Builder result = PlanNodeStatsEstimate.builder();
-                // Scale output row count by 0.9 for every additional term
-                result.setOutputRowCount(combinedEstimate.getOutputRowCount() * UNKNOWN_FILTER_COEFFICIENT);
+            PlanNodeStatsEstimate combinedEstimate = smallestEstimates.get(0);
+            double combinedSelectivityFactor = combinedEstimate.getOutputRowCount() / input.getOutputRowCount();
+            double scalingFactor = 1.0;
+            for (int i = 1; i < smallestEstimates.size(); i++) {
                 PlanNodeStatsEstimate termEstimate = estimates.get(i);
+                double termSelectivity = termEstimate.getOutputRowCount() / input.getOutputRowCount();
+                scalingFactor = scalingFactor * 0.5;
+                combinedSelectivityFactor = combinedSelectivityFactor * Math.pow(termSelectivity, scalingFactor);
+                // Scale output row count by combinedSelectivityFactor for every additional term
+                PlanNodeStatsEstimate.Builder result = PlanNodeStatsEstimate.builder();
+                result.setOutputRowCount(input.getOutputRowCount() * combinedSelectivityFactor);
                 PlanNodeStatsEstimate finalCombinedEstimate = combinedEstimate;
                 // Update statistic range for symbols
                 concat(combinedEstimate.getSymbolsWithKnownStatistics().stream(), termEstimate.getSymbolsWithKnownStatistics().stream())
@@ -213,8 +212,8 @@ public class FilterStatsCalculator
                         });
                 combinedEstimate = normalizer.normalize(result.build(), types);
             }
-
-            return combinedEstimate;
+            boolean unknownRowCountFound = estimates.stream().anyMatch(PlanNodeStatsEstimate::isOutputRowCountUnknown);
+            return combinedEstimate.mapOutputRowCount(rowCount -> unknownRowCountFound ? rowCount * UNKNOWN_FILTER_COEFFICIENT : rowCount);
         }
 
         private List<PlanNodeStatsEstimate> estimateExpressionsGroupedBySymbolReference(List<Expression> terms)
