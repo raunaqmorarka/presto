@@ -448,6 +448,15 @@ public class TestFilterStatsCalculator
                                 .highValue(100.0)
                                 .nullsFraction(0.0));
 
+        // Expression as value
+        assertExpression("CAST(x AS DECIMAL(7,2)) BETWEEN CAST(DECIMAL '-2.50' AS decimal(7, 2)) AND CAST(DECIMAL '2.50' AS decimal(7, 2))")
+                .outputRowsCount(187.5)
+                .symbolStats("x", symbolStats ->
+                        symbolStats.distinctValuesCount(10.0)
+                                .lowValue(-2.5)
+                                .highValue(2.5)
+                                .nullsFraction(0.0));
+
         assertExpression("'a' IN ('a', 'b')").equalTo(standardInputStatistics);
         assertExpression("'a' IN ('b', 'c')").outputRowsCount(0);
         assertExpression("CAST('b' AS VARCHAR(3)) IN (CAST('a' AS VARCHAR(3)), CAST('b' AS VARCHAR(3)))").equalTo(standardInputStatistics);
