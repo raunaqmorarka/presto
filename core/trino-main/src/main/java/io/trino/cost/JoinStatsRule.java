@@ -14,23 +14,29 @@
 package io.trino.cost;
 
 import com.google.common.annotations.VisibleForTesting;
+import com.google.common.collect.ArrayListMultimap;
+import com.google.common.collect.Multimap;
 import io.trino.Session;
 import io.trino.matching.Pattern;
 import io.trino.sql.planner.Symbol;
 import io.trino.sql.planner.TypeProvider;
+import io.trino.sql.planner.iterative.GroupReference;
 import io.trino.sql.planner.iterative.Lookup;
 import io.trino.sql.planner.plan.JoinNode;
 import io.trino.sql.planner.plan.JoinNode.EquiJoinClause;
+import io.trino.sql.planner.plan.PlanNode;
+import io.trino.sql.planner.plan.PlanNodeId;
 import io.trino.sql.tree.ComparisonExpression;
 import io.trino.sql.tree.Expression;
 import io.trino.util.MoreMath;
 
 import java.util.Collection;
-import java.util.LinkedList;
 import java.util.List;
+import java.util.Objects;
 import java.util.Optional;
-import java.util.Queue;
+import java.util.stream.Stream;
 
+import static com.google.common.base.MoreObjects.toStringHelper;
 import static com.google.common.base.Preconditions.checkArgument;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static com.google.common.collect.Sets.difference;
@@ -84,13 +90,13 @@ public class JoinStatsRule
 
         switch (node.getType()) {
             case INNER:
-                return Optional.of(computeInnerJoinStats(node, crossJoinStats, session, types));
+                return Optional.of(computeInnerJoinStats(node, crossJoinStats, session, types, lookup));
             case LEFT:
-                return Optional.of(computeLeftJoinStats(node, leftStats, rightStats, crossJoinStats, session, types));
+                return Optional.of(computeLeftJoinStats(node, leftStats, rightStats, crossJoinStats, session, types, lookup));
             case RIGHT:
-                return Optional.of(computeRightJoinStats(node, leftStats, rightStats, crossJoinStats, session, types));
+                return Optional.of(computeRightJoinStats(node, leftStats, rightStats, crossJoinStats, session, types, lookup));
             case FULL:
-                return Optional.of(computeFullJoinStats(node, leftStats, rightStats, crossJoinStats, session, types));
+                return Optional.of(computeFullJoinStats(node, leftStats, rightStats, crossJoinStats, session, types, lookup));
         }
         throw new IllegalStateException("Unknown join type: " + node.getType());
     }
@@ -101,12 +107,13 @@ public class JoinStatsRule
             PlanNodeStatsEstimate rightStats,
             PlanNodeStatsEstimate crossJoinStats,
             Session session,
-            TypeProvider types)
+            TypeProvider types,
+            Lookup lookup)
     {
         PlanNodeStatsEstimate rightJoinComplementStats = calculateJoinComplementStats(node.getFilter(), flippedCriteria(node), rightStats, leftStats, types);
         return addJoinComplementStats(
                 rightStats,
-                computeLeftJoinStats(node, leftStats, rightStats, crossJoinStats, session, types),
+                computeLeftJoinStats(node, leftStats, rightStats, crossJoinStats, session, types, lookup),
                 rightJoinComplementStats);
     }
 
@@ -116,9 +123,10 @@ public class JoinStatsRule
             PlanNodeStatsEstimate rightStats,
             PlanNodeStatsEstimate crossJoinStats,
             Session session,
-            TypeProvider types)
+            TypeProvider types,
+            Lookup lookup)
     {
-        PlanNodeStatsEstimate innerJoinStats = computeInnerJoinStats(node, crossJoinStats, session, types);
+        PlanNodeStatsEstimate innerJoinStats = computeInnerJoinStats(node, crossJoinStats, session, types, lookup);
         PlanNodeStatsEstimate leftJoinComplementStats = calculateJoinComplementStats(node.getFilter(), node.getCriteria(), leftStats, rightStats, types);
         return addJoinComplementStats(
                 leftStats,
@@ -132,9 +140,10 @@ public class JoinStatsRule
             PlanNodeStatsEstimate rightStats,
             PlanNodeStatsEstimate crossJoinStats,
             Session session,
-            TypeProvider types)
+            TypeProvider types,
+            Lookup lookup)
     {
-        PlanNodeStatsEstimate innerJoinStats = computeInnerJoinStats(node, crossJoinStats, session, types);
+        PlanNodeStatsEstimate innerJoinStats = computeInnerJoinStats(node, crossJoinStats, session, types, lookup);
         PlanNodeStatsEstimate rightJoinComplementStats = calculateJoinComplementStats(node.getFilter(), flippedCriteria(node), rightStats, leftStats, types);
         return addJoinComplementStats(
                 rightStats,
@@ -142,7 +151,7 @@ public class JoinStatsRule
                 rightJoinComplementStats);
     }
 
-    private PlanNodeStatsEstimate computeInnerJoinStats(JoinNode node, PlanNodeStatsEstimate crossJoinStats, Session session, TypeProvider types)
+    private PlanNodeStatsEstimate computeInnerJoinStats(JoinNode node, PlanNodeStatsEstimate crossJoinStats, Session session, TypeProvider types, Lookup lookup)
     {
         List<EquiJoinClause> equiJoinCriteria = node.getCriteria();
 
@@ -154,7 +163,7 @@ public class JoinStatsRule
             return filterStatsCalculator.filterStats(crossJoinStats, node.getFilter().get(), session, types);
         }
 
-        PlanNodeStatsEstimate equiJoinEstimate = filterByEquiJoinClauses(crossJoinStats, node.getCriteria(), session, types);
+        PlanNodeStatsEstimate equiJoinEstimate = filterByEquiJoinClauses(crossJoinStats, node, session, types, lookup);
 
         if (equiJoinEstimate.isOutputRowCountUnknown()) {
             return PlanNodeStatsEstimate.unknown();
@@ -175,52 +184,119 @@ public class JoinStatsRule
 
     private PlanNodeStatsEstimate filterByEquiJoinClauses(
             PlanNodeStatsEstimate stats,
-            Collection<EquiJoinClause> clauses,
+            JoinNode node,
             Session session,
-            TypeProvider types)
+            TypeProvider types,
+            Lookup lookup)
     {
-        checkArgument(!clauses.isEmpty(), "clauses is empty");
-        PlanNodeStatsEstimate result = PlanNodeStatsEstimate.unknown();
+        checkArgument(!node.getCriteria().isEmpty(), "join node criteria is empty");
         // Join equality clauses are usually correlated. Therefore we shouldn't treat each join equality
         // clause separately because stats estimates would be way off. Instead we choose so called
         // "driving clause" which mostly reduces join output rows cardinality and apply UNKNOWN_FILTER_COEFFICIENT
         // for other (auxiliary) clauses.
-        Queue<EquiJoinClause> remainingClauses = new LinkedList<>(clauses);
-        EquiJoinClause drivingClause = remainingClauses.poll();
-        for (int i = 0; i < clauses.size(); i++) {
-            PlanNodeStatsEstimate estimate = filterByEquiJoinClauses(stats, drivingClause, remainingClauses, session, types);
-            if (result.isOutputRowCountUnknown() || (!estimate.isOutputRowCountUnknown() && estimate.getOutputRowCount() < result.getOutputRowCount())) {
-                result = estimate;
-            }
-            remainingClauses.add(drivingClause);
-            drivingClause = remainingClauses.poll();
+        Multimap<Boolean, PlanNodeStatsEstimateWithClause> groupedEstimates = groupCorrelatedClausesAndEstimate(stats, node, session, types, lookup);
+        List<PlanNodeStatsEstimateWithClause> drivingClausesSortedEstimates = groupedEstimates.get(true).stream()
+                .filter(estimateWithClause -> !estimateWithClause.getEstimate().isOutputRowCountUnknown())
+                .sorted(comparingDouble(estimateWithClause -> estimateWithClause.getEstimate().getOutputRowCount()))
+                .collect(toImmutableList());
+
+        if (drivingClausesSortedEstimates.isEmpty()) {
+            return PlanNodeStatsEstimate.unknown();
         }
 
-        return result;
+        PlanNodeStatsEstimate combinedEstimate = drivingClausesSortedEstimates.get(0).getEstimate();
+        double combinedSelectivityFactor = combinedEstimate.getOutputRowCount() / stats.getOutputRowCount();
+        double scalingFactor = 1.0;
+        for (int i = 1; i < Math.min(4, drivingClausesSortedEstimates.size()); i++) {
+            PlanNodeStatsEstimate clauseEstimate = drivingClausesSortedEstimates.get(i).getEstimate();
+            EquiJoinClause clause = drivingClausesSortedEstimates.get(i).getClause();
+            double clauseSelectivity = clauseEstimate.getOutputRowCount() / stats.getOutputRowCount();
+            scalingFactor = scalingFactor * 0.5;
+            combinedSelectivityFactor = combinedSelectivityFactor * Math.pow(clauseSelectivity, scalingFactor);
+            double outputRowCount = stats.getOutputRowCount() * combinedSelectivityFactor;
+            combinedEstimate = filterByClause(combinedEstimate, clause, outputRowCount, types);
+        }
+
+        for (int i = 4; i < drivingClausesSortedEstimates.size(); i++) {
+            EquiJoinClause clause = drivingClausesSortedEstimates.get(i).getClause();
+            double outputRowCount = combinedEstimate.getOutputRowCount() * UNKNOWN_FILTER_COEFFICIENT;
+            combinedEstimate = filterByClause(combinedEstimate, clause, outputRowCount, types);
+        }
+
+        for (PlanNodeStatsEstimateWithClause nonDrivingClause : groupedEstimates.get(false)) {
+            double outputRowCount = combinedEstimate.getOutputRowCount() * UNKNOWN_FILTER_COEFFICIENT;
+            combinedEstimate = filterByClause(combinedEstimate, nonDrivingClause.getClause(), outputRowCount, types);
+        }
+
+        return combinedEstimate;
     }
 
-    private PlanNodeStatsEstimate filterByEquiJoinClauses(
+    private Multimap<Boolean, PlanNodeStatsEstimateWithClause> groupCorrelatedClausesAndEstimate(
             PlanNodeStatsEstimate stats,
-            EquiJoinClause drivingClause,
-            Collection<EquiJoinClause> remainingClauses,
+            JoinNode node,
             Session session,
-            TypeProvider types)
+            TypeProvider types,
+            Lookup lookup)
     {
-        ComparisonExpression drivingPredicate = new ComparisonExpression(EQUAL, drivingClause.getLeft().toSymbolReference(), drivingClause.getRight().toSymbolReference());
-        PlanNodeStatsEstimate filteredStats = filterStatsCalculator.filterStats(stats, drivingPredicate, session, types);
-        for (EquiJoinClause clause : remainingClauses) {
-            filteredStats = filterByAuxiliaryClause(filteredStats, clause, types);
+        Collection<EquiJoinClause> clauses = node.getCriteria();
+        ArrayListMultimap<EquiJoinClauseSourceId, EquiJoinClause> correlatedJoinClauses = ArrayListMultimap.create();
+        for (EquiJoinClause clause : clauses) {
+            // equijoin clauses which originate in same source on both sides are assumed to be fully correlated
+            EquiJoinClauseSourceId sourceId = new EquiJoinClauseSourceId(
+                    findSymbolSource(node, clause.getLeft(), lookup),
+                    findSymbolSource(node, clause.getRight(), lookup));
+            correlatedJoinClauses.put(sourceId, clause);
         }
-        return filteredStats;
+
+        ArrayListMultimap<Boolean, PlanNodeStatsEstimateWithClause> groupedEstimates = ArrayListMultimap.create();
+        for (EquiJoinClauseSourceId sourceId : correlatedJoinClauses.keySet()) {
+            List<PlanNodeStatsEstimateWithClause> knownEstimates = correlatedJoinClauses.get(sourceId).stream()
+                    .map(clause -> {
+                        ComparisonExpression drivingPredicate = new ComparisonExpression(EQUAL, clause.getLeft().toSymbolReference(), clause.getRight().toSymbolReference());
+                        return new PlanNodeStatsEstimateWithClause(filterStatsCalculator.filterStats(stats, drivingPredicate, session, types), clause);
+                    })
+                    .filter(estimateWithClause -> !estimateWithClause.getEstimate().isOutputRowCountUnknown())
+                    .collect(toImmutableList());
+            // Find driving clause estimate for each correlated group
+            Optional<PlanNodeStatsEstimateWithClause> drivingEstimate = knownEstimates.stream()
+                    .min(comparingDouble(estimateWithClause -> estimateWithClause.getEstimate().getOutputRowCount()));
+            if (drivingEstimate.isEmpty()) {
+                continue;
+            }
+            // Separate estimates into driving and non-driving clause groups
+            groupedEstimates.put(true, drivingEstimate.get());
+            knownEstimates.stream()
+                    .filter(estimateWithClause -> !estimateWithClause.getClause().equals(drivingEstimate.get().getClause()))
+                    .forEach(estimateWithClause -> groupedEstimates.put(false, estimateWithClause));
+        }
+        return groupedEstimates;
     }
 
-    private PlanNodeStatsEstimate filterByAuxiliaryClause(PlanNodeStatsEstimate stats, EquiJoinClause clause, TypeProvider types)
+    private PlanNodeId findSymbolSource(PlanNode root, Symbol symbol, Lookup lookup)
+    {
+        List<PlanNode> sources = root.getSources().stream()
+                .flatMap(planNode -> {
+                    if (planNode instanceof GroupReference) {
+                        return lookup.resolveGroup(planNode);
+                    }
+                    return Stream.of(planNode);
+                })
+                .collect(toImmutableList());
+        for (PlanNode source : sources) {
+            if (source.getOutputSymbols().contains(symbol)) {
+                return findSymbolSource(source, symbol, lookup);
+            }
+        }
+        return root.getId();
+    }
+
+    private PlanNodeStatsEstimate filterByClause(PlanNodeStatsEstimate combinedEstimate, EquiJoinClause clause, double outputRowCount, TypeProvider types)
     {
         // we just clear null fraction and adjust ranges here
         // selectivity is mostly handled by driving clause. We just scale heuristically by UNKNOWN_FILTER_COEFFICIENT here.
 
-        SymbolStatsEstimate leftStats = stats.getSymbolStatistics(clause.getLeft());
-        SymbolStatsEstimate rightStats = stats.getSymbolStatistics(clause.getRight());
+        SymbolStatsEstimate leftStats = combinedEstimate.getSymbolStatistics(clause.getLeft());
+        SymbolStatsEstimate rightStats = combinedEstimate.getSymbolStatistics(clause.getRight());
         StatisticRange leftRange = StatisticRange.from(leftStats);
         StatisticRange rightRange = StatisticRange.from(rightStats);
 
@@ -243,8 +319,8 @@ public class JoinStatsRule
                 .setDistinctValuesCount(retainedNdv)
                 .build();
 
-        PlanNodeStatsEstimate.Builder result = PlanNodeStatsEstimate.buildFrom(stats)
-                .setOutputRowCount(stats.getOutputRowCount() * UNKNOWN_FILTER_COEFFICIENT)
+        PlanNodeStatsEstimate.Builder result = PlanNodeStatsEstimate.buildFrom(combinedEstimate)
+                .setOutputRowCount(outputRowCount)
                 .addSymbolStatistics(clause.getLeft(), newLeftStats)
                 .addSymbolStatistics(clause.getRight(), newRightStats);
         return normalizer.normalize(result.build(), types);
@@ -409,5 +485,67 @@ public class JoinStatsRule
         return node.getCriteria().stream()
                 .map(EquiJoinClause::flip)
                 .collect(toImmutableList());
+    }
+
+    private static class PlanNodeStatsEstimateWithClause
+    {
+        private final PlanNodeStatsEstimate estimate;
+        private final EquiJoinClause clause;
+
+        private PlanNodeStatsEstimateWithClause(PlanNodeStatsEstimate estimate, EquiJoinClause clause)
+        {
+            this.estimate = requireNonNull(estimate, "estimate is null");
+            this.clause = requireNonNull(clause, "clause is null");
+        }
+
+        private PlanNodeStatsEstimate getEstimate()
+        {
+            return estimate;
+        }
+
+        private EquiJoinClause getClause()
+        {
+            return clause;
+        }
+    }
+
+    private static class EquiJoinClauseSourceId
+    {
+        private final PlanNodeId left;
+        private final PlanNodeId right;
+
+        private EquiJoinClauseSourceId(PlanNodeId left, PlanNodeId right)
+        {
+            this.left = left;
+            this.right = right;
+        }
+
+        @Override
+        public boolean equals(Object o)
+        {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            EquiJoinClauseSourceId that = (EquiJoinClauseSourceId) o;
+            return Objects.equals(left, that.left) && Objects.equals(right, that.right);
+        }
+
+        @Override
+        public int hashCode()
+        {
+            return Objects.hash(left, right);
+        }
+
+        @Override
+        public String toString()
+        {
+            return toStringHelper(this)
+                    .add("left", left)
+                    .add("right", right)
+                    .toString();
+        }
     }
 }
