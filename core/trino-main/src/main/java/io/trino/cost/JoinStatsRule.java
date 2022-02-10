@@ -211,7 +211,7 @@ public class JoinStatsRule
             PlanNodeStatsEstimate clauseEstimate = drivingClausesSortedEstimates.get(i).getEstimate();
             EquiJoinClause clause = drivingClausesSortedEstimates.get(i).getClause();
             double clauseSelectivity = clauseEstimate.getOutputRowCount() / stats.getOutputRowCount();
-            scalingFactor = scalingFactor * 0.5;
+            scalingFactor = scalingFactor * 0.66;
             combinedSelectivityFactor = combinedSelectivityFactor * Math.pow(clauseSelectivity, scalingFactor);
             double outputRowCount = stats.getOutputRowCount() * combinedSelectivityFactor;
             combinedEstimate = filterByClause(combinedEstimate, clause, outputRowCount, types);

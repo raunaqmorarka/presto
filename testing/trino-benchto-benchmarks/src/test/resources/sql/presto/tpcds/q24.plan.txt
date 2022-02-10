@@ -42,16 +42,14 @@ remote exchange (GATHER, SINGLE, [])
                                             local exchange (GATHER, SINGLE, [])
                                                 remote exchange (REPARTITION, HASH, ["c_first_name_103", "c_last_name_104", "ca_state_121", "i_color_90", "i_current_price_78", "i_manager_id_93", "i_size_88", "i_units_91", "s_state_68", "s_store_name_49"])
                                                     partial aggregation over (c_first_name_103, c_last_name_104, ca_state_121, i_color_90, i_current_price_78, i_manager_id_93, i_size_88, i_units_91, s_state_68, s_store_name_49)
-                                                        join (INNER, PARTITIONED):
-                                                            remote exchange (REPARTITION, HASH, ["ca_zip_122", "upper_137"])
-                                                                scan customer_address
+                                                        join (INNER, REPLICATED):
+                                                            scan customer_address
                                                             local exchange (GATHER, SINGLE, [])
-                                                                remote exchange (REPARTITION, HASH, ["c_birth_country_109", "s_zip_69"])
-                                                                    join (INNER, PARTITIONED):
-                                                                        remote exchange (REPARTITION, HASH, ["c_customer_sk_95"])
-                                                                            scan customer
+                                                                remote exchange (REPLICATE, BROADCAST, [])
+                                                                    join (INNER, REPLICATED):
+                                                                        scan customer
                                                                         local exchange (GATHER, SINGLE, [])
-                                                                            remote exchange (REPARTITION, HASH, ["ss_customer_sk_4"])
+                                                                            remote exchange (REPLICATE, BROADCAST, [])
                                                                                 join (INNER, PARTITIONED):
                                                                                     remote exchange (REPARTITION, HASH, ["ss_item_sk_3", "ss_ticket_number_10"])
                                                                                         join (INNER, REPLICATED):
