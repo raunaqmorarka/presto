@@ -5,20 +5,7 @@ local exchange (GATHER, SINGLE, [])
                 remote exchange (REPARTITION, HASH, ["channel$gid", "groupid", "id$gid"])
                     partial aggregation over (channel$gid, groupid, id$gid)
                         local exchange (REPARTITION, ROUND_ROBIN, [])
-                            join (LEFT, PARTITIONED):
-                                final aggregation over (ss_store_sk)
-                                    local exchange (GATHER, SINGLE, [])
-                                        remote exchange (REPARTITION, HASH, ["ss_store_sk"])
-                                            partial aggregation over (ss_store_sk)
-                                                join (INNER, REPLICATED):
-                                                    join (INNER, REPLICATED):
-                                                        scan store_sales
-                                                        local exchange (GATHER, SINGLE, [])
-                                                            remote exchange (REPLICATE, BROADCAST, [])
-                                                                scan date_dim
-                                                    local exchange (GATHER, SINGLE, [])
-                                                        remote exchange (REPLICATE, BROADCAST, [])
-                                                            scan store
+                            join (RIGHT, PARTITIONED):
                                 final aggregation over (sr_store_sk)
                                     local exchange (GATHER, SINGLE, [])
                                         remote exchange (REPARTITION, HASH, ["sr_store_sk"])
@@ -26,6 +13,19 @@ local exchange (GATHER, SINGLE, [])
                                                 join (INNER, REPLICATED):
                                                     join (INNER, REPLICATED):
                                                         scan store_returns
+                                                        local exchange (GATHER, SINGLE, [])
+                                                            remote exchange (REPLICATE, BROADCAST, [])
+                                                                scan date_dim
+                                                    local exchange (GATHER, SINGLE, [])
+                                                        remote exchange (REPLICATE, BROADCAST, [])
+                                                            scan store
+                                final aggregation over (ss_store_sk)
+                                    local exchange (GATHER, SINGLE, [])
+                                        remote exchange (REPARTITION, HASH, ["ss_store_sk"])
+                                            partial aggregation over (ss_store_sk)
+                                                join (INNER, REPLICATED):
+                                                    join (INNER, REPLICATED):
+                                                        scan store_sales
                                                         local exchange (GATHER, SINGLE, [])
                                                             remote exchange (REPLICATE, BROADCAST, [])
                                                                 scan date_dim
