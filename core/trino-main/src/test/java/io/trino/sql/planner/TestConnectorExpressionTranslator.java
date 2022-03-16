@@ -27,6 +27,7 @@ import io.trino.spi.expression.Variable;
 import io.trino.spi.type.Type;
 import io.trino.sql.tree.ArithmeticBinaryExpression;
 import io.trino.sql.tree.ArithmeticUnaryExpression;
+import io.trino.sql.tree.Cast;
 import io.trino.sql.tree.ComparisonExpression;
 import io.trino.sql.tree.Expression;
 import io.trino.sql.tree.IsNotNullPredicate;
@@ -52,6 +53,7 @@ import java.util.stream.Stream;
 
 import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static io.airlift.slice.Slices.utf8Slice;
+import static io.trino.spi.expression.StandardFunctions.CAST_FUNCTION_NAME;
 import static io.trino.spi.expression.StandardFunctions.IS_NULL_FUNCTION_NAME;
 import static io.trino.spi.expression.StandardFunctions.LIKE_PATTERN_FUNCTION_NAME;
 import static io.trino.spi.expression.StandardFunctions.NEGATE_FUNCTION_NAME;
@@ -68,6 +70,7 @@ import static io.trino.spi.type.RowType.rowType;
 import static io.trino.spi.type.SmallintType.SMALLINT;
 import static io.trino.spi.type.TinyintType.TINYINT;
 import static io.trino.spi.type.VarcharType.createVarcharType;
+import static io.trino.sql.analyzer.TypeSignatureTranslator.toSqlType;
 import static io.trino.sql.planner.ConnectorExpressionTranslator.translate;
 import static io.trino.sql.planner.TestingPlannerContext.PLANNER_CONTEXT;
 import static io.trino.sql.planner.TypeAnalyzer.createTestingTypeAnalyzer;
@@ -296,6 +299,41 @@ public class TestConnectorExpressionTranslator
                         NULLIF_FUNCTION_NAME,
                         List.of(new Variable("varchar_symbol_1", VARCHAR_TYPE),
                                 new Variable("varchar_symbol_1", VARCHAR_TYPE))));
+    }
+
+    @Test
+    public void testTranslateCast()
+    {
+        assertTranslationRoundTrips(
+                new Cast(
+                        new SymbolReference("varchar_symbol_1"),
+                        toSqlType(VARCHAR_TYPE)),
+                new Call(
+                        VARCHAR_TYPE,
+                        CAST_FUNCTION_NAME,
+                        List.of(new Variable("varchar_symbol_1", VARCHAR_TYPE))));
+
+        assertTranslationToConnectorExpression(
+                TEST_SESSION,
+                new Cast(
+                        new SymbolReference("varchar_symbol_1"),
+                        toSqlType(VARCHAR_TYPE),
+                        false,
+                        true),
+                new Call(
+                        VARCHAR_TYPE,
+                        CAST_FUNCTION_NAME,
+                        List.of(new Variable("varchar_symbol_1", VARCHAR_TYPE))));
+
+        // TRY_CAST is not translated
+        assertTranslationToConnectorExpression(
+                TEST_SESSION,
+                new Cast(
+                        new SymbolReference("varchar_symbol_1"),
+                        toSqlType(VARCHAR_TYPE),
+                        true,
+                        true),
+                Optional.empty());
     }
 
     @Test
