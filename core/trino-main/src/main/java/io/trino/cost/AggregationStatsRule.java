@@ -25,8 +25,11 @@ import java.util.Collection;
 import java.util.Map;
 import java.util.Optional;
 
+import static io.trino.operator.scalar.MathFunctions.isNaN;
+import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.sql.planner.plan.AggregationNode.Step.SINGLE;
 import static io.trino.sql.planner.plan.Patterns.aggregation;
+import static java.lang.Double.POSITIVE_INFINITY;
 import static java.lang.Math.min;
 import static java.util.Objects.requireNonNull;
 
@@ -76,11 +79,17 @@ public class AggregationStatsRule
             }));
         }
 
-        double rowsCount = getRowsCount(sourceStats, groupBySymbols);
-        result.setOutputRowCount(min(rowsCount, sourceStats.getOutputRowCount()));
+        double rowsCount;
+        if (groupBySymbols.isEmpty()) {
+            rowsCount = 1;
+        }
+        else {
+            rowsCount = min(getRowsCount(sourceStats, groupBySymbols), sourceStats.getOutputRowCount());
+        }
+        result.setOutputRowCount(rowsCount);
 
         for (Map.Entry<Symbol, Aggregation> aggregationEntry : aggregations.entrySet()) {
-            result.addSymbolStatistics(aggregationEntry.getKey(), estimateAggregationStats(aggregationEntry.getValue(), sourceStats));
+            result.addSymbolStatistics(aggregationEntry.getKey(), estimateAggregationStats(aggregationEntry.getValue(), sourceStats, groupBySymbols));
         }
 
         return result.build();
@@ -97,10 +106,28 @@ public class AggregationStatsRule
         return rowsCount;
     }
 
-    private static SymbolStatsEstimate estimateAggregationStats(Aggregation aggregation, PlanNodeStatsEstimate sourceStats)
+    private static SymbolStatsEstimate estimateAggregationStats(Aggregation aggregation, PlanNodeStatsEstimate sourceStats, Collection<Symbol> groupBySymbols)
     {
         requireNonNull(aggregation, "aggregation is null");
         requireNonNull(sourceStats, "sourceStats is null");
+
+        if (groupBySymbols.isEmpty()
+                && !aggregation.isDistinct()
+                && aggregation.getResolvedFunction().getSignature().getName().equals("count")) {
+            // Attempt to estimate only count(*) with no group by symbols. This mainly helps to
+            // ensure that estimates are populated in case of EXISTS/NOT EXISTS clauses.
+            double sourceRowCount = sourceStats.getOutputRowCount();
+            if (sourceRowCount == 0) {
+                return SymbolStatsEstimate.zero();
+            }
+            return SymbolStatsEstimate.builder()
+                    .setLowValue(isNaN(sourceRowCount) ? 0 : sourceRowCount)
+                    .setHighValue(isNaN(sourceRowCount) ? POSITIVE_INFINITY : sourceRowCount)
+                    .setDistinctValuesCount(1)
+                    .setNullsFraction(0)
+                    .setAverageRowSize(BIGINT.getFixedSize())
+                    .build();
+        }
 
         // TODO implement simple aggregations like: min, max, count, sum
         return SymbolStatsEstimate.unknown();
