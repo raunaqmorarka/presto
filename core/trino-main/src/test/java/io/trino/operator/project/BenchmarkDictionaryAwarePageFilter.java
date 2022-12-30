@@ -15,6 +15,7 @@ package io.trino.operator.project;
 
 import com.google.common.collect.ImmutableList;
 import io.trino.Session;
+import io.trino.metadata.MetadataManager;
 import io.trino.spi.Page;
 import io.trino.spi.block.Block;
 import io.trino.spi.block.BlockBuilder;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 
 import static io.trino.jmh.Benchmarks.benchmark;
 import static io.trino.metadata.FunctionManager.createTestingFunctionManager;
@@ -57,9 +59,10 @@ public class BenchmarkDictionaryAwarePageFilter
 {
     private static final Random random = new Random(5376453765L);
     private static final int MAX_ROWS = 10_000_000;
-
-    private final ConnectorSession connectorSession;
-    private final PageFilter pageFilter;
+    private static final Session SESSION = testSessionBuilder().build();
+    private static final ConnectorSession CONNECTOR_SESSION = SESSION.toConnectorSession();
+    private static final PageFunctionCompiler PAGE_FUNCTION_COMPILER = new PageFunctionCompiler(createTestingFunctionManager(), new CompilerConfig());
+    private static final MetadataManager METADATA_MANAGER = createTestMetadataManager();
 
     private List<Page> inputPages;
     @Param({
@@ -69,17 +72,14 @@ public class BenchmarkDictionaryAwarePageFilter
     })
     public DataSet inputDataSet;
 
-    public BenchmarkDictionaryAwarePageFilter()
-    {
-        Session session = testSessionBuilder().build();
-        RowExpression filter = call(
-                createTestMetadataManager().resolveOperator(session, LESS_THAN, ImmutableList.of(INTEGER, INTEGER)),
-                constant(64992484L, INTEGER),
-                field(0, INTEGER));
-        PageFunctionCompiler pageFunctionCompiler = new PageFunctionCompiler(createTestingFunctionManager(), new CompilerConfig());
-        this.pageFilter = pageFunctionCompiler.compileFilter(filter, Optional.empty()).get();
-        this.connectorSession = session.toConnectorSession();
-    }
+    @Param({
+            "CURRENT",
+            "BOOLEAN_POSITIONS_MAY_HAVE_NULL",
+            "BOOLEAN_POSITIONS_SEPARATE_NULLS_LOOP",
+            "ARRAY_POSITIONS_MAY_HAVE_NULL",
+            "ARRAY_POSITIONS_SEPARATE_NULLS_LOOP",
+    })
+    public PageFilterProvider pageFilterProvider;
 
     public enum DataSet
     {
@@ -134,6 +134,34 @@ public class BenchmarkDictionaryAwarePageFilter
         }
     }
 
+    public enum PageFilterProvider
+    {
+        CURRENT(() -> {
+            RowExpression filter = call(
+                    METADATA_MANAGER.resolveOperator(SESSION, LESS_THAN, ImmutableList.of(INTEGER, INTEGER)),
+                    constant(64992484L, INTEGER),
+                    field(0, INTEGER));
+            return PAGE_FUNCTION_COMPILER.compileFilter(filter, Optional.empty()).get();
+        }),
+        BOOLEAN_POSITIONS_MAY_HAVE_NULL(BooleanSelectedPositionsV1PageFilter::new),
+        BOOLEAN_POSITIONS_SEPARATE_NULLS_LOOP(BooleanSelectedPositionsV2PageFilter::new),
+        ARRAY_POSITIONS_MAY_HAVE_NULL(ArraySelectedPositionsV1PageFilter::new),
+        ARRAY_POSITIONS_SEPARATE_NULLS_LOOP(ArraySelectedPositionsV2PageFilter::new),
+        ;
+
+        private final PageFilter pageFilter;
+
+        PageFilterProvider(Supplier<PageFilter> pageFilterSupplier)
+        {
+            this.pageFilter = pageFilterSupplier.get();
+        }
+
+        public PageFilter getPageFilter()
+        {
+            return pageFilter;
+        }
+    }
+
     @Setup
     public void setup()
     {
@@ -156,10 +184,10 @@ public class BenchmarkDictionaryAwarePageFilter
     {
         long rowsProcessed = 0;
         long rowsFiltered = 0;
-        DictionaryAwarePageFilter filter = new DictionaryAwarePageFilter(pageFilter);
+        DictionaryAwarePageFilter filter = new DictionaryAwarePageFilter(pageFilterProvider.getPageFilter());
         for (int i = 0; i < inputPages.size(); i++) {
             Page page = inputPages.get(i);
-            SelectedPositions selectedPositions = filter.filter(connectorSession, page);
+            SelectedPositions selectedPositions = filter.filter(CONNECTOR_SESSION, page);
             int selectedPositionCount = selectedPositions.size();
             rowsProcessed += page.getPositionCount();
             rowsFiltered += page.getPositionCount() - selectedPositionCount;

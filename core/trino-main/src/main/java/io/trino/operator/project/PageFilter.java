@@ -48,4 +48,12 @@ public interface PageFilter
         }
         return SelectedPositions.positionsList(positions, 0, selectedCount);
     }
+
+    static SelectedPositions positionsArrayToSelectedPositions(int[] selectedPositions, int selectedCount, int positionsCount)
+    {
+        if (selectedCount == 0 || selectedCount == positionsCount) {
+            return SelectedPositions.positionsRange(0, selectedCount);
+        }
+        return SelectedPositions.positionsList(selectedPositions, 0, selectedCount);
+    }
 }
