@@ -189,11 +189,6 @@ public abstract class AbstractColumnReader<BufferType>
         //   2. Number of dictionary entries exceeds a threshold (Integer.MAX_VALUE for parquet-mr by default).
         // Trino dictionary blocks are produced only when the entire column chunk is dictionary encoded
         if (pageReader.hasOnlyDictionaryEncodedPages()) {
-            // TODO: DictionaryBlocks are currently restricted to variable width types where dictionary processing is most beneficial.
-            //   Dictionary processing for other data types can be enabled after validating improvements on benchmarks.
-            if (!(field.getType() instanceof AbstractVariableWidthType)) {
-                return false;
-            }
             requireNonNull(dictionaryDecoder, "dictionaryDecoder is null");
             // Filtering of parquet pages using column indexes may result in the total number of values read from the
             // column chunk being lower than the size of the dictionary

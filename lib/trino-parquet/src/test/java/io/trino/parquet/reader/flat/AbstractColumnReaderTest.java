@@ -92,9 +92,7 @@ public abstract class AbstractColumnReaderTest
         reader.prepareNextRead(2);
         Block actual = reader.readPrimitive().getBlock();
         assertThat(actual.mayHaveNull()).isFalse();
-        if (field.getType() instanceof AbstractVariableWidthType) {
-            assertThat(actual).isInstanceOf(DictionaryBlock.class);
-        }
+        assertThat(actual).isInstanceOf(DictionaryBlock.class);
         format.assertBlock(values, actual);
     }
 
