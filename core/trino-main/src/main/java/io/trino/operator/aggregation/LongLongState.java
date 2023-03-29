@@ -13,16 +13,16 @@
  */
 package io.trino.operator.aggregation;
 
+import io.trino.operator.aggregation.state.LongLongStateFactory;
+import io.trino.operator.aggregation.state.LongLongStateSerializer;
 import io.trino.spi.function.AccumulatorState;
+import io.trino.spi.function.AccumulatorStateMetadata;
 
+@AccumulatorStateMetadata(stateFactoryClass = LongLongStateFactory.class, stateSerializerClass = LongLongStateSerializer.class)
 public interface LongLongState
         extends AccumulatorState
 {
-    long getFirst();
+    long[] getLongArray();
 
-    void setFirst(long first);
-
-    long getSecond();
-
-    void setSecond(long second);
+    int getLongArrayOffset();
 }

@@ -33,32 +33,44 @@ public final class LongSumAggregation
     @InputFunction
     public static void sum(@AggregationState LongLongState state, @SqlType(StandardTypes.BIGINT) long value)
     {
-        state.setFirst(state.getFirst() + 1);
-        state.setSecond(BigintOperators.add(state.getSecond(), value));
+        long[] longs = state.getLongArray();
+        int offset = state.getLongArrayOffset();
+        longs[offset] = BigintOperators.add(longs[offset], value);
+        longs[offset + 1] += 1;
     }
 
     @RemoveInputFunction
     public static void removeInput(@AggregationState LongLongState state, @SqlType(StandardTypes.BIGINT) long value)
     {
-        state.setFirst(state.getFirst() - 1);
-        state.setSecond(BigintOperators.subtract(state.getSecond(), value));
+        long[] longs = state.getLongArray();
+        int offset = state.getLongArrayOffset();
+        longs[offset] = BigintOperators.subtract(longs[offset], value);
+        longs[offset + 1] -= 1;
     }
 
     @CombineFunction
     public static void combine(@AggregationState LongLongState state, @AggregationState LongLongState otherState)
     {
-        state.setFirst(state.getFirst() + otherState.getFirst());
-        state.setSecond(BigintOperators.add(state.getSecond(), otherState.getSecond()));
+        long[] longs = state.getLongArray();
+        int offset = state.getLongArrayOffset();
+
+        long[] otherLongs = otherState.getLongArray();
+        int otherOffset = otherState.getLongArrayOffset();
+
+        longs[offset] = BigintOperators.add(longs[offset], otherLongs[otherOffset]);
+        longs[offset + 1] += otherLongs[otherOffset + 1];
     }
 
     @OutputFunction(StandardTypes.BIGINT)
     public static void output(@AggregationState LongLongState state, BlockBuilder out)
     {
-        if (state.getFirst() == 0) {
+        long[] longs = state.getLongArray();
+        int offset = state.getLongArrayOffset();
+        if (longs[offset + 1] == 0) {
             out.appendNull();
         }
         else {
-            BigintType.BIGINT.writeLong(out, state.getSecond());
+            BigintType.BIGINT.writeLong(out, longs[offset]);
         }
     }
 }
