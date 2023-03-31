@@ -20,16 +20,27 @@ import java.util.Arrays;
 import static io.airlift.slice.SizeOf.instanceSize;
 import static io.airlift.slice.SizeOf.sizeOfBooleanArray;
 import static io.trino.array.BigArrays.INITIAL_SEGMENTS;
-import static io.trino.array.BigArrays.SEGMENT_SIZE;
-import static io.trino.array.BigArrays.offset;
-import static io.trino.array.BigArrays.segment;
 
 // Note: this code was forked from fastutil (http://fastutil.di.unimi.it/)
 // Copyright (C) 2010-2013 Sebastiano Vigna
 public final class BooleanBigArray
 {
     private static final int INSTANCE_SIZE = instanceSize(BooleanBigArray.class);
-    private static final long SIZE_OF_SEGMENT = sizeOfBooleanArray(SEGMENT_SIZE);
+    /**
+     * The shift used to compute the segment associated with an index (equivalently, the logarithm of the segment size).
+     */
+    private static final int SEGMENT_SHIFT = 13;
+
+    /**
+     * Number of elements in a segment of BooleanBigArray.
+     */
+    private static final int SEGMENT_ELEMENTS = 1 << SEGMENT_SHIFT;
+
+    /**
+     * The mask used to compute the offset associated to an index.
+     */
+    private static final int SEGMENT_MASK = SEGMENT_ELEMENTS - 1;
+    private static final long SIZE_OF_SEGMENT = sizeOfBooleanArray(SEGMENT_ELEMENTS);
 
     private final boolean initialValue;
 
@@ -128,7 +139,7 @@ public final class BooleanBigArray
             int destinationStartSegment = segment(destinationIndex);
             int destinationStartOffset = offset(destinationIndex);
 
-            int copyLength = Math.min(SEGMENT_SIZE - startOffset, SEGMENT_SIZE - destinationStartOffset);
+            int copyLength = Math.min(SEGMENT_ELEMENTS - startOffset, SEGMENT_ELEMENTS - destinationStartOffset);
             copyLength = Math.min(copyLength, length > Integer.MAX_VALUE ? Integer.MAX_VALUE : (int) length);
 
             System.arraycopy(
@@ -162,12 +173,22 @@ public final class BooleanBigArray
 
     private void allocateNewSegment()
     {
-        boolean[] newSegment = new boolean[SEGMENT_SIZE];
+        boolean[] newSegment = new boolean[SEGMENT_ELEMENTS];
         if (initialValue) {
             Arrays.fill(newSegment, initialValue);
         }
         array[segments] = newSegment;
-        capacity += SEGMENT_SIZE;
+        capacity += SEGMENT_ELEMENTS;
         segments++;
+    }
+
+    private static int segment(long index)
+    {
+        return (int) (index >>> SEGMENT_SHIFT);
+    }
+
+    private static int offset(long index)
+    {
+        return (int) (index & SEGMENT_MASK);
     }
 }
