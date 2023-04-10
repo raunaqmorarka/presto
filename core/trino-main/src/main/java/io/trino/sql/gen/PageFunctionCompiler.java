@@ -353,7 +353,7 @@ public class PageFunctionCompiler
         RowExpressionCompiler compiler = new RowExpressionCompiler(
                 callSiteBinder,
                 cachedInstanceBinder,
-                fieldReferenceCompilerProjection(callSiteBinder),
+                fieldReferenceCompiler(callSiteBinder),
                 functionManager,
                 compiledLambdaMap);
 
@@ -422,7 +422,8 @@ public class PageFunctionCompiler
         generateFilterMethod(classDefinition, callSiteBinder, cachedInstanceBinder, compiledLambdaMap, filter);
 
         FieldDefinition selectedPositions = classDefinition.declareField(a(PRIVATE), "selectedPositions", boolean[].class);
-        generatePageFilterMethod(classDefinition, selectedPositions);
+        List<Integer> blockInputChannels = getInputChannels(filter);
+        generatePageFilterMethod(classDefinition, selectedPositions, blockInputChannels);
 
         // isDeterministic
         classDefinition.declareMethod(a(PUBLIC), "isDeterministic", type(boolean.class))
@@ -448,7 +449,7 @@ public class PageFunctionCompiler
                 .retObject();
 
         // constructor
-        generateConstructor(classDefinition, cachedInstanceBinder, method -> {
+        generateConstructor(classDefinition, cachedInstanceBinder, blockInputChannels, method -> {
             Variable thisVariable = method.getScope().getThis();
             method.getBody().append(thisVariable.setField(selectedPositions, newArray(type(boolean[].class), 0)));
         });
@@ -456,7 +457,7 @@ public class PageFunctionCompiler
         return classDefinition;
     }
 
-    private static MethodDefinition generatePageFilterMethod(ClassDefinition classDefinition, FieldDefinition selectedPositionsField)
+    private static MethodDefinition generatePageFilterMethod(ClassDefinition classDefinition, FieldDefinition selectedPositionsField, List<Integer> inputChannels)
     {
         Parameter session = arg("session", ConnectorSession.class);
         Parameter page = arg("page", Page.class);
@@ -474,6 +475,10 @@ public class PageFunctionCompiler
         Variable thisVariable = method.getThis();
         BytecodeBlock body = method.getBody();
 
+        for (int channel : inputChannels) {
+            body.append(thisVariable.setField("block_" + channel, page.invoke("getBlock", Block.class, constantInt(channel))));
+        }
+
         Variable positionCount = scope.declareVariable("positionCount", body, page.invoke("getPositionCount", int.class));
 
         body.append(new IfStatement("grow selectedPositions if necessary")
@@ -486,7 +491,7 @@ public class PageFunctionCompiler
                 .initialize(position.set(constantInt(0)))
                 .condition(lessThan(position, positionCount))
                 .update(position.increment())
-                .body(selectedPositions.setElement(position, thisVariable.invoke("filter", boolean.class, session, page, position))));
+                .body(selectedPositions.setElement(position, thisVariable.invoke("filter", boolean.class, session, position))));
 
         body.append(invokeStatic(
                 PageFilter.class,
@@ -507,16 +512,14 @@ public class PageFunctionCompiler
             RowExpression filter)
     {
         Parameter session = arg("session", ConnectorSession.class);
-        Parameter page = arg("page", Page.class);
         Parameter position = arg("position", int.class);
 
         MethodDefinition method = classDefinition.declareMethod(
-                a(PUBLIC),
+                a(PRIVATE),
                 "filter",
                 type(boolean.class),
                 ImmutableList.<Parameter>builder()
                         .add(session)
-                        .add(page)
                         .add(position)
                         .build());
 
@@ -524,8 +527,6 @@ public class PageFunctionCompiler
 
         Scope scope = method.getScope();
         BytecodeBlock body = method.getBody();
-
-        declareBlockVariables(filter, page, scope, body);
 
         Variable wasNullVariable = scope.declareVariable("wasNull", body, constantFalse());
         RowExpressionCompiler compiler = new RowExpressionCompiler(
@@ -572,6 +573,7 @@ public class PageFunctionCompiler
     private static void generateConstructor(
             ClassDefinition classDefinition,
             CachedInstanceBinder cachedInstanceBinder,
+            List<Integer> inputChannels,
             Consumer<MethodDefinition> additionalStatements)
     {
         MethodDefinition constructorDefinition = classDefinition.declareConstructor(a(PUBLIC));
@@ -584,16 +586,12 @@ public class PageFunctionCompiler
                 .invokeConstructor(Object.class);
 
         additionalStatements.accept(constructorDefinition);
+        for (int channel : inputChannels) {
+            classDefinition.declareField(a(PRIVATE, FINAL), "block_" + channel, Block.class);
+        }
 
         cachedInstanceBinder.generateInitializations(thisVariable, body);
         body.ret();
-    }
-
-    private static void declareBlockVariables(RowExpression expression, Parameter page, Scope scope, BytecodeBlock body)
-    {
-        for (int channel : getInputChannels(expression)) {
-            scope.declareVariable("block_" + channel, body, page.invoke("getBlock", Block.class, constantInt(channel)));
-        }
     }
 
     private static List<Integer> getInputChannels(Iterable<RowExpression> expressions)
@@ -612,18 +610,10 @@ public class PageFunctionCompiler
         return getInputChannels(ImmutableList.of(expression));
     }
 
-    private static RowExpressionVisitor<BytecodeNode, Scope> fieldReferenceCompilerProjection(CallSiteBinder callSiteBinder)
-    {
-        return new InputReferenceCompiler(
-                (scope, field) -> scope.getThis().getField("block_" + field, Block.class),
-                (scope, field) -> scope.getVariable("position"),
-                callSiteBinder);
-    }
-
     private static RowExpressionVisitor<BytecodeNode, Scope> fieldReferenceCompiler(CallSiteBinder callSiteBinder)
     {
         return new InputReferenceCompiler(
-                (scope, field) -> scope.getVariable("block_" + field),
+                (scope, field) -> scope.getThis().getField("block_" + field, Block.class),
                 (scope, field) -> scope.getVariable("position"),
                 callSiteBinder);
     }
