@@ -22,11 +22,11 @@ remote exchange (GATHER, SINGLE, [])
                                                         scan customer_address
                                         local exchange (GATHER, SINGLE, [])
                                             remote exchange (REPARTITION, HASH, ["cr_returning_customer_sk"])
-                                                join (INNER, REPLICATED):
+                                                join (INNER, PARTITIONED):
                                                     dynamic filter (["cr_call_center_sk", "cr_returned_date_sk"])
                                                         scan catalog_returns
                                                     local exchange (GATHER, SINGLE, [])
-                                                        remote exchange (REPLICATE, BROADCAST, [])
+                                                        remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=2104}, ["d_date_sk"])
                                                             scan date_dim
                                     local exchange (GATHER, SINGLE, [])
                                         remote exchange (REPLICATE, BROADCAST, [])

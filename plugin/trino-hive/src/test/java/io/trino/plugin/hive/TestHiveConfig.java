@@ -119,7 +119,7 @@ public class TestHiveConfig
                 .setHudiCatalogName(null)
                 .setAutoPurge(false)
                 .setPartitionProjectionEnabled(false)
-                .setPartitionExecutionEnabled(false));
+                .setPartitionExecutionEnabled(true));
     }
 
     @Test
@@ -206,7 +206,7 @@ public class TestHiveConfig
                 .put("hive.hudi-catalog-name", "hudi")
                 .put("hive.auto-purge", "true")
                 .put(CONFIGURATION_HIVE_PARTITION_PROJECTION_ENABLED, "true")
-                .put("hive.partition-execution", "true")
+                .put("hive.partition-execution", "false")
                 .buildOrThrow();
 
         HiveConfig expected = new HiveConfig()
@@ -290,7 +290,7 @@ public class TestHiveConfig
                 .setHudiCatalogName("hudi")
                 .setAutoPurge(true)
                 .setPartitionProjectionEnabled(true)
-                .setPartitionExecutionEnabled(true);
+                .setPartitionExecutionEnabled(false);
 
         assertFullMapping(properties, expected);
     }

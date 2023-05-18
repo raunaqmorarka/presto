@@ -7,11 +7,11 @@ local exchange (GATHER, SINGLE, [])
                         local exchange (REPARTITION, HASH, ["i_brand", "i_product_name"])
                             remote exchange (REPARTITION, HASH, ["i_brand", "i_product_name"])
                                 join (INNER, REPLICATED):
-                                    join (INNER, REPLICATED):
+                                    join (INNER, PARTITIONED):
                                         dynamic filter (["inv_date_sk", "inv_item_sk"])
                                             scan inventory
                                         local exchange (GATHER, SINGLE, [])
-                                            remote exchange (REPLICATE, BROADCAST, [])
+                                            remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=261}, ["d_date_sk"])
                                                 scan date_dim
                                     local exchange (GATHER, SINGLE, [])
                                         remote exchange (REPLICATE, BROADCAST, [])

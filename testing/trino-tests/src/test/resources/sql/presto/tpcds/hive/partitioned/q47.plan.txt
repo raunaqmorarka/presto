@@ -10,11 +10,11 @@ local exchange (GATHER, SINGLE, [])
                                     partial aggregation over (d_moy, d_year, i_brand, i_category, s_company_name, s_store_name)
                                         join (INNER, REPLICATED):
                                             join (INNER, REPLICATED):
-                                                join (INNER, REPLICATED):
+                                                join (INNER, PARTITIONED):
                                                     dynamic filter (["ss_item_sk", "ss_sold_date_sk", "ss_store_sk"])
                                                         scan store_sales
                                                     local exchange (GATHER, SINGLE, [])
-                                                        remote exchange (REPLICATE, BROADCAST, [])
+                                                        remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1824}, ["d_date_sk"])
                                                             scan date_dim
                                                 local exchange (GATHER, SINGLE, [])
                                                     remote exchange (REPLICATE, BROADCAST, [])
@@ -32,11 +32,11 @@ local exchange (GATHER, SINGLE, [])
                                     partial aggregation over (d_moy_69, d_year_67, i_brand_17, i_category_21, s_company_name_109, s_store_name_97)
                                         join (INNER, REPLICATED):
                                             join (INNER, REPLICATED):
-                                                join (INNER, REPLICATED):
+                                                join (INNER, PARTITIONED):
                                                     dynamic filter (["ss_item_sk_35", "ss_sold_date_sk_56", "ss_store_sk_40"])
                                                         scan store_sales
                                                     local exchange (GATHER, SINGLE, [])
-                                                        remote exchange (REPLICATE, BROADCAST, [])
+                                                        remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1824}, ["d_date_sk_61"])
                                                             scan date_dim
                                                 local exchange (GATHER, SINGLE, [])
                                                     remote exchange (REPLICATE, BROADCAST, [])
@@ -54,11 +54,11 @@ local exchange (GATHER, SINGLE, [])
                                 partial aggregation over (d_moy_193, d_year_191, i_brand_141, i_category_145, s_company_name_233, s_store_name_221)
                                     join (INNER, REPLICATED):
                                         join (INNER, REPLICATED):
-                                            join (INNER, REPLICATED):
+                                            join (INNER, PARTITIONED):
                                                 dynamic filter (["ss_item_sk_159", "ss_sold_date_sk_180", "ss_store_sk_164"])
                                                     scan store_sales
                                                 local exchange (GATHER, SINGLE, [])
-                                                    remote exchange (REPLICATE, BROADCAST, [])
+                                                    remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1824}, ["d_date_sk_185"])
                                                         scan date_dim
                                             local exchange (GATHER, SINGLE, [])
                                                 remote exchange (REPLICATE, BROADCAST, [])

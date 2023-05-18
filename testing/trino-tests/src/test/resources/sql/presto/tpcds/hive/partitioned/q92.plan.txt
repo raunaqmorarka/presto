@@ -8,15 +8,15 @@ final aggregation over ()
                             local exchange (GATHER, SINGLE, [])
                                 remote exchange (REPARTITION, HASH, ["ws_item_sk_8"])
                                     partial aggregation over (ws_item_sk_8)
-                                        join (INNER, REPLICATED):
+                                        join (INNER, PARTITIONED):
                                             dynamic filter (["ws_item_sk_8", "ws_sold_date_sk_39"])
                                                 scan web_sales
                                             local exchange (GATHER, SINGLE, [])
-                                                remote exchange (REPLICATE, BROADCAST, [])
+                                                remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1824}, ["d_date_sk_44"])
                                                     scan date_dim
                         local exchange (GATHER, SINGLE, [])
                             remote exchange (REPARTITION, HASH, ["ws_item_sk"])
-                                join (INNER, REPLICATED):
+                                join (INNER, PARTITIONED):
                                     join (INNER, REPLICATED):
                                         dynamic filter (["ws_item_sk", "ws_sold_date_sk"])
                                             scan web_sales
@@ -24,7 +24,7 @@ final aggregation over ()
                                             remote exchange (REPLICATE, BROADCAST, [])
                                                 scan item
                                     local exchange (GATHER, SINGLE, [])
-                                        remote exchange (REPLICATE, BROADCAST, [])
+                                        remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1824}, ["d_date_sk"])
                                             scan date_dim
                     local exchange (GATHER, SINGLE, [])
                         remote exchange (REPLICATE, BROADCAST, [])

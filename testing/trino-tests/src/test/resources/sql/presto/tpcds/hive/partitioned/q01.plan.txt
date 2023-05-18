@@ -12,11 +12,11 @@ local exchange (GATHER, SINGLE, [])
                                     local exchange (GATHER, SINGLE, [])
                                         remote exchange (REPARTITION, HASH, ["sr_customer_sk", "sr_store_sk"])
                                             partial aggregation over (sr_customer_sk, sr_store_sk)
-                                                join (INNER, REPLICATED):
+                                                join (INNER, PARTITIONED):
                                                     dynamic filter (["sr_returned_date_sk", "sr_store_sk"])
                                                         scan store_returns
                                                     local exchange (GATHER, SINGLE, [])
-                                                        remote exchange (REPLICATE, BROADCAST, [])
+                                                        remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=2004}, ["d_date_sk"])
                                                             scan date_dim
                                 local exchange (GATHER, SINGLE, [])
                                     remote exchange (REPLICATE, BROADCAST, [])
@@ -31,11 +31,11 @@ local exchange (GATHER, SINGLE, [])
                                             local exchange (GATHER, SINGLE, [])
                                                 remote exchange (REPARTITION, HASH, ["sr_customer_sk_11", "sr_store_sk_15"])
                                                     partial aggregation over (sr_customer_sk_11, sr_store_sk_15)
-                                                        join (INNER, REPLICATED):
+                                                        join (INNER, PARTITIONED):
                                                             dynamic filter (["sr_returned_date_sk_28"])
                                                                 scan store_returns
                                                             local exchange (GATHER, SINGLE, [])
-                                                                remote exchange (REPLICATE, BROADCAST, [])
+                                                                remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=2004}, ["d_date_sk_33"])
                                                                     scan date_dim
             local exchange (GATHER, SINGLE, [])
                 remote exchange (REPLICATE, BROADCAST, [])

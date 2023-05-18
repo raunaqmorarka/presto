@@ -8,11 +8,11 @@ local exchange (GATHER, SINGLE, [])
                             remote exchange (REPARTITION, HASH, ["cs_item_sk"])
                                 join (INNER, REPLICATED):
                                     join (INNER, REPLICATED):
-                                        join (INNER, REPLICATED):
+                                        join (INNER, PARTITIONED):
                                             dynamic filter (["cs_bill_cdemo_sk", "cs_item_sk", "cs_promo_sk", "cs_sold_date_sk"])
                                                 scan catalog_sales
                                             local exchange (GATHER, SINGLE, [])
-                                                remote exchange (REPLICATE, BROADCAST, [])
+                                                remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1837}, ["d_date_sk"])
                                                     scan date_dim
                                         local exchange (GATHER, SINGLE, [])
                                             remote exchange (REPLICATE, BROADCAST, [])

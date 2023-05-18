@@ -10,11 +10,11 @@ local exchange (GATHER, SINGLE, [])
                             local exchange (GATHER, SINGLE, [])
                                 remote exchange (REPLICATE, BROADCAST, [])
                                     join (INNER, REPLICATED, can skip output duplicates):
-                                        join (INNER, REPLICATED, can skip output duplicates):
+                                        join (INNER, PARTITIONED, can skip output duplicates):
                                             dynamic filter (["inv_date_sk", "inv_item_sk"])
                                                 scan inventory
                                             local exchange (GATHER, SINGLE, [])
-                                                remote exchange (REPLICATE, BROADCAST, [])
+                                                remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=261}, ["d_date_sk"])
                                                     scan date_dim
                                         local exchange (GATHER, SINGLE, [])
                                             remote exchange (REPLICATE, BROADCAST, [])

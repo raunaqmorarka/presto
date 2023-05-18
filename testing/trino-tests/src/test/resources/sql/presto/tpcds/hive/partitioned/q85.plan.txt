@@ -25,11 +25,11 @@ local exchange (GATHER, SINGLE, [])
                                                                             scan web_returns
                                                                     local exchange (GATHER, SINGLE, [])
                                                                         remote exchange (REPARTITION, HASH, ["ws_item_sk", "ws_order_number"])
-                                                                            join (INNER, REPLICATED):
+                                                                            join (INNER, PARTITIONED):
                                                                                 dynamic filter (["ws_sold_date_sk", "ws_web_page_sk"])
                                                                                     scan web_sales
                                                                                 local exchange (GATHER, SINGLE, [])
-                                                                                    remote exchange (REPLICATE, BROADCAST, [])
+                                                                                    remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1824}, ["d_date_sk"])
                                                                                         scan date_dim
                                                             local exchange (GATHER, SINGLE, [])
                                                                 remote exchange (REPARTITION, HASH, ["cd_demo_sk"])

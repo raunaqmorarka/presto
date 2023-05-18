@@ -6,11 +6,11 @@ local exchange (GATHER, SINGLE, [])
                     partial aggregation over (i_item_id, w_warehouse_name)
                         join (INNER, REPLICATED):
                             join (INNER, REPLICATED):
-                                join (INNER, REPLICATED):
+                                join (INNER, PARTITIONED):
                                     dynamic filter (["inv_date_sk", "inv_item_sk", "inv_warehouse_sk"])
                                         scan inventory
                                     local exchange (GATHER, SINGLE, [])
-                                        remote exchange (REPLICATE, BROADCAST, [])
+                                        remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=261}, ["d_date_sk"])
                                             scan date_dim
                                 local exchange (GATHER, SINGLE, [])
                                     remote exchange (REPLICATE, BROADCAST, [])

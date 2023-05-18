@@ -122,7 +122,7 @@ public class HiveConfig
     private boolean skipTargetCleanupOnRollback;
 
     private boolean bucketExecutionEnabled = true;
-    private boolean partitionExecutionEnabled;
+    private boolean partitionExecutionEnabled = true;
     private boolean sortedWritingEnabled = true;
     private boolean propagateTableScanSortingProperties;
 

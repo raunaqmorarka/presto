@@ -40,11 +40,11 @@ remote exchange (GATHER, SINGLE, [])
                                                                                                                     remote exchange (REPARTITION, HASH, ["ss_cdemo_sk"])
                                                                                                                         join (INNER, PARTITIONED):
                                                                                                                             remote exchange (REPARTITION, HASH, ["ss_item_sk", "ss_ticket_number"])
-                                                                                                                                join (INNER, REPLICATED):
+                                                                                                                                join (INNER, PARTITIONED):
                                                                                                                                     dynamic filter (["ss_cdemo_sk", "ss_hdemo_sk", "ss_item_sk", "ss_item_sk", "ss_item_sk", "ss_promo_sk", "ss_sold_date_sk", "ss_store_sk", "ss_ticket_number"])
                                                                                                                                         scan store_sales
                                                                                                                                     local exchange (GATHER, SINGLE, [])
-                                                                                                                                        remote exchange (REPLICATE, BROADCAST, [])
+                                                                                                                                        remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1824}, ["d_date_sk"])
                                                                                                                                             scan date_dim
                                                                                                                             local exchange (GATHER, SINGLE, [])
                                                                                                                                 remote exchange (REPARTITION, HASH, ["sr_item_sk", "sr_ticket_number"])
@@ -140,11 +140,11 @@ remote exchange (GATHER, SINGLE, [])
                                                                                                                         remote exchange (REPARTITION, HASH, ["ss_cdemo_sk_156"])
                                                                                                                             join (INNER, PARTITIONED):
                                                                                                                                 remote exchange (REPARTITION, HASH, ["ss_item_sk_154", "ss_ticket_number_161"])
-                                                                                                                                    join (INNER, REPLICATED):
+                                                                                                                                    join (INNER, PARTITIONED):
                                                                                                                                         dynamic filter (["ss_cdemo_sk_156", "ss_hdemo_sk_157", "ss_item_sk_154", "ss_item_sk_154", "ss_promo_sk_160", "ss_sold_date_sk_175", "ss_store_sk_159", "ss_ticket_number_161"])
                                                                                                                                             scan store_sales
                                                                                                                                         local exchange (GATHER, SINGLE, [])
-                                                                                                                                            remote exchange (REPLICATE, BROADCAST, [])
+                                                                                                                                            remote exchange (REPARTITION, local:HivePartitioningHandle{buckets=1, hiveTypes=[], partitions=1824}, ["d_date_sk_277"])
                                                                                                                                                 scan date_dim
                                                                                                                                 local exchange (GATHER, SINGLE, [])
                                                                                                                                     remote exchange (REPARTITION, HASH, ["sr_item_sk_181", "sr_ticket_number_188"])
