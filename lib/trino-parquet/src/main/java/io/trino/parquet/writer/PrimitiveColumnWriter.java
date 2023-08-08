@@ -45,6 +45,7 @@ import java.util.Set;
 import static com.google.common.base.Preconditions.checkState;
 import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.airlift.slice.SizeOf.instanceSize;
+import static io.trino.parquet.writer.ParquetCompressor.CompressionBuffer;
 import static io.trino.parquet.writer.ParquetCompressor.getCompressor;
 import static io.trino.parquet.writer.ParquetDataOutput.createDataOutput;
 import static io.trino.parquet.writer.repdef.DefLevelWriterProvider.DefinitionLevelWriter;
@@ -91,6 +92,7 @@ public class PrimitiveColumnWriter
 
     @Nullable
     private final ParquetCompressor compressor;
+    private final CompressionBuffer compressionBuffer;
 
     private final int pageSizeThreshold;
 
@@ -99,7 +101,14 @@ public class PrimitiveColumnWriter
     private long bufferedBytes;
     private long pageBufferedBytes;
 
-    public PrimitiveColumnWriter(ColumnDescriptor columnDescriptor, PrimitiveValueWriter primitiveValueWriter, ValuesWriter definitionLevelWriter, ValuesWriter repetitionLevelWriter, CompressionCodec compressionCodec, int pageSizeThreshold)
+    public PrimitiveColumnWriter(
+            ColumnDescriptor columnDescriptor,
+            PrimitiveValueWriter primitiveValueWriter,
+            ValuesWriter definitionLevelWriter,
+            ValuesWriter repetitionLevelWriter,
+            CompressionCodec compressionCodec,
+            CompressionBuffer compressionBuffer,
+            int pageSizeThreshold)
     {
         this.columnDescriptor = requireNonNull(columnDescriptor, "columnDescriptor is null");
         this.maxDefinitionLevel = columnDescriptor.getMaxDefinitionLevel();
@@ -107,6 +116,7 @@ public class PrimitiveColumnWriter
         this.repetitionLevelWriter = requireNonNull(repetitionLevelWriter, "repetitionLevelWriter is null");
         this.primitiveValueWriter = requireNonNull(primitiveValueWriter, "primitiveValueWriter is null");
         this.compressionCodec = requireNonNull(compressionCodec, "compressionCodec is null");
+        this.compressionBuffer = requireNonNull(compressionBuffer, "compressionBuffer is null");
         this.compressor = getCompressor(compressionCodec);
         this.pageSizeThreshold = pageSizeThreshold;
         this.columnStatistics = Statistics.createStats(columnDescriptor.getPrimitiveType());
@@ -204,7 +214,7 @@ public class PrimitiveColumnWriter
                 .toByteArray();
         int uncompressedSize = pageDataBytes.length;
         ParquetDataOutput pageData = (compressor != null)
-                ? compressor.compress(pageDataBytes)
+                ? compressor.compress(pageDataBytes, compressionBuffer)
                 : createDataOutput(Slices.wrappedBuffer(pageDataBytes));
         int compressedSize = pageData.size();
 
@@ -261,7 +271,7 @@ public class PrimitiveColumnWriter
             int uncompressedSize = dictionaryPage.getUncompressedSize();
             byte[] pageBytes = dictionaryPage.getBytes().toByteArray();
             ParquetDataOutput pageData = compressor != null
-                    ? compressor.compress(pageBytes)
+                    ? compressor.compress(pageBytes, compressionBuffer)
                     : createDataOutput(Slices.wrappedBuffer(pageBytes));
             int compressedSize = pageData.size();
 

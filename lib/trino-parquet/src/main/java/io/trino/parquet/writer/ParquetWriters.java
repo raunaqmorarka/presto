@@ -60,6 +60,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 
 import static com.google.common.base.Preconditions.checkArgument;
+import static io.trino.parquet.writer.ParquetCompressor.CompressionBuffer;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
 import static io.trino.spi.type.BigintType.BIGINT;
 import static io.trino.spi.type.BooleanType.BOOLEAN;
@@ -89,9 +90,10 @@ final class ParquetWriters
             Map<List<String>, Type> trinoTypes,
             ParquetProperties parquetProperties,
             CompressionCodec compressionCodec,
+            CompressionBuffer compressionBuffer,
             Optional<DateTimeZone> parquetTimeZone)
     {
-        WriteBuilder writeBuilder = new WriteBuilder(messageType, trinoTypes, parquetProperties, compressionCodec, parquetTimeZone);
+        WriteBuilder writeBuilder = new WriteBuilder(messageType, trinoTypes, parquetProperties, compressionCodec, compressionBuffer, parquetTimeZone);
         ParquetTypeVisitor.visit(messageType, writeBuilder);
         return writeBuilder.build();
     }
@@ -103,6 +105,7 @@ final class ParquetWriters
         private final Map<List<String>, Type> trinoTypes;
         private final ParquetProperties parquetProperties;
         private final CompressionCodec compressionCodec;
+        private final CompressionBuffer compressionBuffer;
         private final Optional<DateTimeZone> parquetTimeZone;
         private final ImmutableList.Builder<ColumnWriter> builder = ImmutableList.builder();
 
@@ -111,12 +114,14 @@ final class ParquetWriters
                 Map<List<String>, Type> trinoTypes,
                 ParquetProperties parquetProperties,
                 CompressionCodec compressionCodec,
+                CompressionBuffer compressionBuffer,
                 Optional<DateTimeZone> parquetTimeZone)
         {
             this.type = requireNonNull(messageType, "messageType is null");
             this.trinoTypes = requireNonNull(trinoTypes, "trinoTypes is null");
             this.parquetProperties = requireNonNull(parquetProperties, "parquetProperties is null");
             this.compressionCodec = requireNonNull(compressionCodec, "compressionCodec is null");
+            this.compressionBuffer = requireNonNull(compressionBuffer, "compressionBuffer is null");
             this.parquetTimeZone = requireNonNull(parquetTimeZone, "parquetTimeZone is null");
         }
 
@@ -172,6 +177,7 @@ final class ParquetWriters
                     parquetProperties.newDefinitionLevelWriter(columnDescriptor),
                     parquetProperties.newRepetitionLevelWriter(columnDescriptor),
                     compressionCodec,
+                    compressionBuffer,
                     parquetProperties.getPageSizeThreshold());
         }
 

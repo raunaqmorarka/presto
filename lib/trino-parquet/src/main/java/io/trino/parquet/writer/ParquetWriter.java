@@ -63,6 +63,7 @@ import static io.trino.parquet.ParquetTypeUtils.constructField;
 import static io.trino.parquet.ParquetTypeUtils.getColumnIO;
 import static io.trino.parquet.ParquetTypeUtils.lookupColumnByName;
 import static io.trino.parquet.ParquetWriteValidation.ParquetWriteValidationBuilder;
+import static io.trino.parquet.writer.ParquetCompressor.CompressionBuffer;
 import static io.trino.parquet.writer.ParquetDataOutput.createDataOutput;
 import static java.lang.Math.max;
 import static java.lang.Math.min;
@@ -88,6 +89,7 @@ public class ParquetWriter
 
     private final ImmutableList.Builder<RowGroup> rowGroupBuilder = ImmutableList.builder();
     private final Optional<ParquetWriteValidationBuilder> validationBuilder;
+    private final CompressionBuffer compressionBuffer = new CompressionBuffer();
 
     private List<ColumnWriter> columnWriters;
     private int rows;
@@ -138,6 +140,7 @@ public class ParquetWriter
     public long getRetainedBytes()
     {
         return INSTANCE_SIZE +
+                compressionBuffer.getRetainedSize() +
                 outputStream.getRetainedSize() +
                 columnWriters.stream().mapToLong(ColumnWriter::getRetainedBytes).sum() +
                 validationBuilder.map(ParquetWriteValidationBuilder::getRetainedSize).orElse(0L);
@@ -206,6 +209,7 @@ public class ParquetWriter
             columnWriters = ImmutableList.of();
             writeFooter();
         }
+        compressionBuffer.release();
         bufferedBytes = 0;
     }
 
@@ -393,6 +397,6 @@ public class ParquetWriter
                 .withPageSize(writerOption.getMaxPageSize())
                 .build();
 
-        this.columnWriters = ParquetWriters.getColumnWriters(messageType, primitiveTypes, parquetProperties, compressionCodec, parquetTimeZone);
+        this.columnWriters = ParquetWriters.getColumnWriters(messageType, primitiveTypes, parquetProperties, compressionCodec, compressionBuffer, parquetTimeZone);
     }
 }

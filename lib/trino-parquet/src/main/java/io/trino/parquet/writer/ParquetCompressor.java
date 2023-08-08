@@ -16,7 +16,9 @@ package io.trino.parquet.writer;
 import io.airlift.compress.Compressor;
 import io.airlift.compress.snappy.SnappyCompressor;
 import io.airlift.compress.zstd.ZstdCompressor;
+import io.airlift.slice.SizeOf;
 import io.airlift.slice.Slices;
+import jakarta.annotation.Nullable;
 import org.apache.parquet.format.CompressionCodec;
 
 import java.io.ByteArrayOutputStream;
@@ -28,8 +30,32 @@ import static java.util.Objects.requireNonNull;
 
 interface ParquetCompressor
 {
-    ParquetDataOutput compress(byte[] input)
+    ParquetDataOutput compress(byte[] input, CompressionBuffer buffer)
             throws IOException;
+
+    class CompressionBuffer
+    {
+        @Nullable
+        private byte[] compressionBuffer;
+
+        byte[] initialize(int size)
+        {
+            if (compressionBuffer == null || compressionBuffer.length < size) {
+                compressionBuffer = new byte[size];
+            }
+            return compressionBuffer;
+        }
+
+        long getRetainedSize()
+        {
+            return SizeOf.sizeOf(compressionBuffer);
+        }
+
+        void release()
+        {
+            compressionBuffer = null;
+        }
+    }
 
     static ParquetCompressor getCompressor(CompressionCodec codec)
     {
@@ -60,7 +86,7 @@ interface ParquetCompressor
             implements ParquetCompressor
     {
         @Override
-        public ParquetDataOutput compress(byte[] input)
+        public ParquetDataOutput compress(byte[] input, CompressionBuffer buffer)
                 throws IOException
         {
             ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
@@ -82,11 +108,11 @@ interface ParquetCompressor
         }
 
         @Override
-        public ParquetDataOutput compress(byte[] input)
+        public ParquetDataOutput compress(byte[] input, CompressionBuffer buffer)
                 throws IOException
         {
             int minCompressionBufferSize = compressor.maxCompressedLength(input.length);
-            byte[] compressionBuffer = new byte[minCompressionBufferSize];
+            byte[] compressionBuffer = buffer.initialize(minCompressionBufferSize);
             // TODO compressedDataSize > bytes.length?
             int compressedDataSize = compressor.compress(input, 0, input.length, compressionBuffer, 0, compressionBuffer.length);
             return createDataOutput(Slices.wrappedBuffer(compressionBuffer, 0, compressedDataSize));
