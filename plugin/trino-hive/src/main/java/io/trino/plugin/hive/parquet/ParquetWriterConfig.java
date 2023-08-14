@@ -25,6 +25,8 @@ import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.DecimalMin;
 import org.apache.parquet.hadoop.ParquetWriter;
 
+import static io.airlift.units.DataSize.Unit.MEGABYTE;
+
 @DefunctConfig({
         "hive.parquet.optimized-writer.enabled",
         "parquet.experimental-optimized-writer.enabled",
@@ -36,7 +38,7 @@ public class ParquetWriterConfig
     public static final String PARQUET_WRITER_MIN_PAGE_SIZE = "8kB";
     public static final String PARQUET_WRITER_MAX_PAGE_SIZE = "8MB";
 
-    private DataSize blockSize = DataSize.ofBytes(ParquetWriter.DEFAULT_BLOCK_SIZE);
+    private DataSize blockSize = DataSize.of(64, MEGABYTE);
     private DataSize pageSize = DataSize.ofBytes(ParquetWriter.DEFAULT_PAGE_SIZE);
     private int batchSize = ParquetWriterOptions.DEFAULT_BATCH_SIZE;
     private double validationPercentage = 5;

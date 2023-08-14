@@ -32,7 +32,7 @@ public class TestParquetWriterConfig
     public void testDefaults()
     {
         assertRecordedDefaults(recordDefaults(ParquetWriterConfig.class)
-                .setBlockSize(DataSize.ofBytes(ParquetWriter.DEFAULT_BLOCK_SIZE))
+                .setBlockSize(DataSize.of(64, MEGABYTE))
                 .setPageSize(DataSize.ofBytes(ParquetWriter.DEFAULT_PAGE_SIZE))
                 .setBatchSize(ParquetWriterOptions.DEFAULT_BATCH_SIZE)
                 .setValidationPercentage(5));
