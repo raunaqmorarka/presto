@@ -14,6 +14,8 @@
 package io.trino.execution.buffer;
 
 import com.google.common.collect.ImmutableList;
+import io.airlift.compress.lz4.Lz4Compressor;
+import io.airlift.compress.lz4.Lz4Decompressor;
 import io.airlift.slice.DynamicSliceOutput;
 import io.airlift.slice.Slice;
 import io.airlift.slice.SliceInput;
@@ -146,8 +148,8 @@ public class TestPagesSerde
     private void testRoundTrip(List<Type> types, List<Page> pages, boolean compressionEnabled, boolean encryptionEnabled, int blockSizeInBytes)
     {
         Optional<SecretKey> encryptionKey = encryptionEnabled ? Optional.of(createRandomAesEncryptionKey()) : Optional.empty();
-        PageSerializer serializer = new PageSerializer(blockEncodingSerde, compressionEnabled, encryptionKey, blockSizeInBytes);
-        PageDeserializer deserializer = new PageDeserializer(blockEncodingSerde, compressionEnabled, encryptionKey, blockSizeInBytes);
+        PageSerializer serializer = new PageSerializer(blockEncodingSerde, compressionEnabled, new Lz4Compressor(), encryptionKey, blockSizeInBytes);
+        PageDeserializer deserializer = new PageDeserializer(blockEncodingSerde, compressionEnabled, new Lz4Decompressor(), encryptionKey, blockSizeInBytes);
         for (Page page : pages) {
             Slice serialized = serializer.serialize(page);
             Page deserialized = deserializer.deserialize(serialized);
@@ -270,8 +272,8 @@ public class TestPagesSerde
     {
         RolloverBlockSerde blockSerde = new RolloverBlockSerde();
         Optional<SecretKey> encryptionKey = encryptionEnabled ? Optional.of(createRandomAesEncryptionKey()) : Optional.empty();
-        PageSerializer serializer = new PageSerializer(blockSerde, compressionEnabled, encryptionKey, blockSize);
-        PageDeserializer deserializer = new PageDeserializer(blockSerde, compressionEnabled, encryptionKey, blockSize);
+        PageSerializer serializer = new PageSerializer(blockSerde, compressionEnabled, new Lz4Compressor(), encryptionKey, blockSize);
+        PageDeserializer deserializer = new PageDeserializer(blockSerde, compressionEnabled, new Lz4Decompressor(), encryptionKey, blockSize);
 
         Page page = createTestPage(numberOfEntries);
         Slice serialized = serializer.serialize(page);
