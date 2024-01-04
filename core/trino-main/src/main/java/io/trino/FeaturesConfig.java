@@ -37,6 +37,7 @@ import static com.google.common.collect.ImmutableList.toImmutableList;
 import static io.airlift.units.DataSize.Unit.KILOBYTE;
 import static io.airlift.units.DataSize.succinctBytes;
 import static io.trino.execution.buffer.CompressionKind.LZ4;
+import static io.trino.execution.buffer.CompressionKind.ZSTD;
 import static io.trino.sql.analyzer.RegexLibrary.JONI;
 
 @DefunctConfig({
@@ -82,8 +83,8 @@ public class FeaturesConfig
     /**
      * default value is overwritten for fault tolerant execution in {@link #applyFaultTolerantExecutionDefaults()}}
      */
-    private boolean exchangeCompressionEnabled;
-    private CompressionKind compressionKind = LZ4;
+    private boolean exchangeCompressionEnabled = true;
+    private CompressionKind compressionKind = ZSTD;
     private boolean pagesIndexEagerCompactionEnabled;
     private boolean omitDateTimeTypePrecision;
     private int maxRecursionDepth = 10;
