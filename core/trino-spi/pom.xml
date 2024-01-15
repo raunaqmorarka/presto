@@ -222,6 +222,10 @@
                                     <old>method java.util.Map&lt;java.lang.String, java.lang.Object&gt; io.trino.spi.connector.ConnectorMaterializedViewDefinition::getProperties()</old>
                                 </item>
                                 <item>
+                                    <code>java.method.removed</code>
+                                    <old>method io.trino.spi.Page io.trino.spi.Page::getLoadedPage(int[], int[])</old>
+                                </item>
+                                <item>
                                     <code>java.method.numberOfParametersChanged</code>
                                     <old>method void io.trino.spi.connector.ConnectorMetadata::createMaterializedView(io.trino.spi.connector.ConnectorSession, io.trino.spi.connector.SchemaTableName, io.trino.spi.connector.ConnectorMaterializedViewDefinition, boolean, boolean)</old>
                                     <new>method void io.trino.spi.connector.ConnectorMetadata::createMaterializedView(io.trino.spi.connector.ConnectorSession, io.trino.spi.connector.SchemaTableName, io.trino.spi.connector.ConnectorMaterializedViewDefinition, java.util.Map&lt;java.lang.String, java.lang.Object&gt;, boolean, boolean)</new>
