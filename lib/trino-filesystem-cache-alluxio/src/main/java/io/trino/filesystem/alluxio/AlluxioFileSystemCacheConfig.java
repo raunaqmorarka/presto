@@ -17,7 +17,6 @@ import com.google.common.base.Splitter;
 import com.google.common.collect.ImmutableList;
 import io.airlift.configuration.Config;
 import io.airlift.configuration.ConfigDescription;
-import io.airlift.configuration.validation.FileExists;
 import io.airlift.units.DataSize;
 import io.airlift.units.Duration;
 import io.airlift.units.MaxDataSize;
@@ -47,7 +46,7 @@ public class AlluxioFileSystemCacheConfig
     private DataSize cachePageSize = DataSize.valueOf("1MB");
 
     @NotNull
-    public List<@FileExists String> getCacheDirectories()
+    public List<String> getCacheDirectories()
     {
         return cacheDirectories;
     }
