@@ -21,6 +21,8 @@ import io.trino.Session;
 import io.trino.SystemSessionProperties;
 import io.trino.filesystem.TrackingFileSystemFactory;
 import io.trino.filesystem.TrackingFileSystemFactory.OperationType;
+import io.trino.filesystem.cache.CachingHostAddressProvider;
+import io.trino.filesystem.cache.NoneCachingHostAddressProvider;
 import io.trino.filesystem.local.LocalFileSystemFactory;
 import io.trino.plugin.tpch.TpchPlugin;
 import io.trino.testing.AbstractTestQueryFramework;
@@ -39,6 +41,7 @@ import java.util.Optional;
 import java.util.function.Predicate;
 
 import static com.google.common.collect.ImmutableMultiset.toImmutableMultiset;
+import static com.google.inject.Scopes.SINGLETON;
 import static com.google.inject.multibindings.OptionalBinder.newOptionalBinder;
 import static io.trino.SystemSessionProperties.MIN_INPUT_SIZE_PER_TASK;
 import static io.trino.filesystem.TrackingFileSystemFactory.OperationType.INPUT_FILE_GET_LENGTH;
@@ -104,6 +107,7 @@ public class TestIcebergFileOperations
                 binder -> {
                     newOptionalBinder(binder, Key.get(boolean.class, AsyncIcebergSplitProducer.class))
                             .setBinding().toInstance(false);
+                    binder.bind(CachingHostAddressProvider.class).to(NoneCachingHostAddressProvider.class).in(SINGLETON);
                 }));
         queryRunner.createCatalog(ICEBERG_CATALOG, "iceberg");
         queryRunner.installPlugin(new TpchPlugin());

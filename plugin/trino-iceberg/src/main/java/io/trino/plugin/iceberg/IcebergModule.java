@@ -18,6 +18,7 @@ import com.google.inject.Key;
 import com.google.inject.Module;
 import com.google.inject.Scopes;
 import com.google.inject.multibindings.Multibinder;
+import io.trino.filesystem.cache.CacheKeyProvider;
 import io.trino.plugin.base.session.SessionPropertiesProvider;
 import io.trino.plugin.hive.FileFormatDataSourceStats;
 import io.trino.plugin.hive.SortingFileWriterConfig;
@@ -26,6 +27,7 @@ import io.trino.plugin.hive.orc.OrcReaderConfig;
 import io.trino.plugin.hive.orc.OrcWriterConfig;
 import io.trino.plugin.hive.parquet.ParquetReaderConfig;
 import io.trino.plugin.hive.parquet.ParquetWriterConfig;
+import io.trino.plugin.iceberg.cache.IcebergCacheKeyProvider;
 import io.trino.plugin.iceberg.catalog.rest.DefaultIcebergFileSystemFactory;
 import io.trino.plugin.iceberg.functions.IcebergFunctionProvider;
 import io.trino.plugin.iceberg.functions.tablechanges.TableChangesFunctionProcessorProvider;
@@ -108,5 +110,6 @@ public class IcebergModule
         binder.bind(TableChangesFunctionProcessorProvider.class).in(Scopes.SINGLETON);
 
         newOptionalBinder(binder, IcebergFileSystemFactory.class).setDefault().to(DefaultIcebergFileSystemFactory.class).in(Scopes.SINGLETON);
+        newOptionalBinder(binder, CacheKeyProvider.class).setBinding().to(IcebergCacheKeyProvider.class).in(Scopes.SINGLETON);
     }
 }

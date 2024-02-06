@@ -62,6 +62,13 @@ import static org.weakref.jmx.guice.ExportBinder.newExporter;
 public class AlluxioFileSystemCacheModule
         extends AbstractConfigurationAwareModule
 {
+    private final boolean isCoordinator;
+
+    public AlluxioFileSystemCacheModule(boolean isCoordinator)
+    {
+        this.isCoordinator = isCoordinator;
+    }
+
     @Override
     protected void setup(Binder binder)
     {
@@ -70,6 +77,9 @@ public class AlluxioFileSystemCacheModule
         binder.bind(CacheStats.class).to(AlluxioCacheStats.class).in(SINGLETON);
         newExporter(binder).export(CacheStats.class).as(generator -> generator.generatedNameOf(AlluxioCacheStats.class));
 
+        if (isCoordinator) {
+            return;
+        }
         binder.bind(TrinoFileSystemCache.class).to(AlluxioFileSystemCache.class).in(SINGLETON);
         newOptionalBinder(binder, CachingHostAddressProvider.class).setBinding().to(ConsistentHashingHostAddressProvider.class).in(SINGLETON);
 

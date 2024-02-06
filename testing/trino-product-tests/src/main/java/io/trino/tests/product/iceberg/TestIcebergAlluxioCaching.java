@@ -11,7 +11,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package io.trino.tests.product.deltalake;
+package io.trino.tests.product.iceberg;
 
 import io.airlift.units.Duration;
 import io.trino.tempto.ProductTest;
@@ -20,7 +20,7 @@ import org.testng.annotations.Test;
 
 import static io.airlift.testing.Assertions.assertGreaterThan;
 import static io.airlift.testing.Assertions.assertGreaterThanOrEqual;
-import static io.trino.tests.product.TestGroups.DELTA_LAKE_ALLUXIO_CACHING;
+import static io.trino.tests.product.TestGroups.ICEBERG_ALLUXIO_CACHING;
 import static io.trino.tests.product.TestGroups.PROFILE_SPECIFIC_TESTS;
 import static io.trino.tests.product.utils.CachingTestUtils.getCacheStats;
 import static io.trino.tests.product.utils.QueryAssertions.assertEventually;
@@ -29,10 +29,10 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.testng.Assert.assertEquals;
 
-public class TestDeltaLakeAlluxioCaching
+public class TestIcebergAlluxioCaching
         extends ProductTest
 {
-    @Test(groups = {DELTA_LAKE_ALLUXIO_CACHING, PROFILE_SPECIFIC_TESTS})
+    @Test(groups = {ICEBERG_ALLUXIO_CACHING, PROFILE_SPECIFIC_TESTS})
     public void testReadFromCache()
     {
         testReadFromTable("table1");
@@ -41,12 +41,12 @@ public class TestDeltaLakeAlluxioCaching
 
     private void testReadFromTable(String tableNameSuffix)
     {
-        String cachedTableName = "delta.default.test_cache_read" + tableNameSuffix;
-        String nonCachedTableName = "delta_non_cached.default.test_cache_read" + tableNameSuffix;
+        String cachedTableName = "iceberg.default.test_cache_read" + tableNameSuffix;
+        String nonCachedTableName = "iceberg.default.test_cache_read" + tableNameSuffix;
 
         createTestTable(cachedTableName);
 
-        CacheStats beforeCacheStats = getCacheStats("delta");
+        CacheStats beforeCacheStats = getCacheStats("iceberg");
 
         long tableSize = (Long) onTrino().executeQuery("SELECT SUM(size) as size FROM (SELECT \"$path\", \"$file_size\" AS size FROM " + nonCachedTableName + " GROUP BY 1, 2)").getOnlyValue();
 
@@ -56,7 +56,7 @@ public class TestDeltaLakeAlluxioCaching
                 new Duration(20, SECONDS),
                 () -> {
                     // first query via caching catalog should fetch external data
-                    CacheStats afterQueryCacheStats = getCacheStats("delta");
+                    CacheStats afterQueryCacheStats = getCacheStats("iceberg");
                     assertGreaterThanOrEqual(afterQueryCacheStats.cacheSpaceUsed(), beforeCacheStats.cacheSpaceUsed() + tableSize);
                     assertGreaterThan(afterQueryCacheStats.externalReads(), beforeCacheStats.externalReads());
                     assertGreaterThanOrEqual(afterQueryCacheStats.cacheReads(), beforeCacheStats.cacheReads());
@@ -65,12 +65,12 @@ public class TestDeltaLakeAlluxioCaching
         assertEventually(
                 new Duration(10, SECONDS),
                 () -> {
-                    CacheStats beforeQueryCacheStats = getCacheStats("delta");
+                    CacheStats beforeQueryCacheStats = getCacheStats("iceberg");
 
                     assertThat(onTrino().executeQuery("SELECT * FROM " + cachedTableName)).hasAnyRows();
 
                     // query via caching catalog should read exclusively from cache
-                    CacheStats afterQueryCacheStats = getCacheStats("delta");
+                    CacheStats afterQueryCacheStats = getCacheStats("iceberg");
                     assertGreaterThan(afterQueryCacheStats.cacheReads(), beforeQueryCacheStats.cacheReads());
                     assertEquals(afterQueryCacheStats.externalReads(), beforeQueryCacheStats.externalReads());
                     assertEquals(afterQueryCacheStats.cacheSpaceUsed(), beforeQueryCacheStats.cacheSpaceUsed());
@@ -85,7 +85,7 @@ public class TestDeltaLakeAlluxioCaching
     private void createTestTable(String tableName)
     {
         onTrino().executeQuery("DROP TABLE IF EXISTS " + tableName);
-        onTrino().executeQuery("SET SESSION delta.target_max_file_size = '2MB'");
+        onTrino().executeQuery("SET SESSION iceberg.target_max_file_size = '2MB'");
         onTrino().executeQuery("CREATE TABLE " + tableName + " AS SELECT * FROM tpch.sf1.customer");
     }
 }

@@ -30,6 +30,7 @@ import static com.google.common.base.Verify.verify;
 import static io.trino.tests.product.TestGroups.CONFIGURED_FEATURES;
 import static io.trino.tests.product.TestGroups.HIVE_ICEBERG_REDIRECTIONS;
 import static io.trino.tests.product.TestGroups.ICEBERG;
+import static io.trino.tests.product.TestGroups.ICEBERG_ALLUXIO_CACHING;
 import static io.trino.tests.product.TestGroups.ICEBERG_JDBC;
 import static io.trino.tests.product.TestGroups.ICEBERG_NESSIE;
 import static io.trino.tests.product.TestGroups.ICEBERG_REST;
@@ -60,6 +61,11 @@ public class SuiteIceberg
                         .build(),
                 testOnEnvironment(EnvSinglenodeSparkIcebergNessie.class)
                         .withGroups(CONFIGURED_FEATURES, ICEBERG_NESSIE)
+                        .build(),
+                testOnEnvironment(EnvSinglenodeSparkIceberg.class)
+                        .withGroups(CONFIGURED_FEATURES, ICEBERG_ALLUXIO_CACHING)
+                        .withExcludedGroups(STORAGE_FORMATS)
                         .build());
+
     }
 }
