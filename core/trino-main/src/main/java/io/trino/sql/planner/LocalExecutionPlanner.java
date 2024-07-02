@@ -2011,12 +2011,11 @@ public class LocalExecutionPlanner
                     dynamicPageFilterFactory = Optional.of(new DynamicPageFilter(
                             plannerContext,
                             session,
-                            dynamicFilter,
                             ((TableScanNode) sourceNode).getAssignments(),
                             sourceLayout,
                             getDynamicRowFilterSelectivityThreshold(session)));
                 }
-                Supplier<PageProcessor> pageProcessor = expressionCompiler.compilePageProcessor(
+                Function<DynamicFilter, PageProcessor> pageProcessor = expressionCompiler.compilePageProcessor(
                         columnarFilterEvaluationEnabled,
                         translatedFilter,
                         dynamicPageFilterFactory,
@@ -2047,7 +2046,7 @@ public class LocalExecutionPlanner
                 OperatorFactory operatorFactory = FilterAndProjectOperator.createOperatorFactory(
                         context.getNextOperatorId(),
                         planNodeId,
-                        pageProcessor,
+                        () -> pageProcessor.apply(dynamicFilter),
                         getTypes(projections),
                         getFilterAndProjectMinOutputPageSize(session),
                         getFilterAndProjectMinOutputPageRowCount(session));

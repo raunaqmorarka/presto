@@ -45,6 +45,7 @@ import static io.trino.sql.gen.columnar.FilterEvaluator.createColumnarFilterEval
 import static io.trino.sql.ir.optimizer.IrExpressionOptimizer.newOptimizer;
 import static io.trino.sql.relational.SqlToRowExpressionTranslator.translate;
 import static java.util.Objects.requireNonNull;
+import static java.util.concurrent.CompletableFuture.completedFuture;
 
 public final class DynamicPageFilter
 {
@@ -53,7 +54,6 @@ public final class DynamicPageFilter
     private final Session session;
     private final IrExpressionOptimizer irExpressionOptimizer;
     private final DomainTranslator domainTranslator;
-    private final DynamicFilter dynamicFilter;
     private final Map<ColumnHandle, Symbol> columnHandles;
     private final Map<Symbol, Integer> sourceLayout;
     private final double selectivityThreshold;
@@ -64,11 +64,16 @@ public final class DynamicPageFilter
     @Nullable
     @GuardedBy("this")
     private CompletableFuture<?> isBlocked;
+    @Nullable
+    @GuardedBy("this")
+    private DynamicFilter currentDynamicFilter;
+    @Nullable
+    @GuardedBy("this")
+    private TupleDomain<ColumnHandle> lastCompiledTupleDomain;
 
     public DynamicPageFilter(
             PlannerContext plannerContext,
             Session session,
-            DynamicFilter dynamicFilter,
             Map<Symbol, ColumnHandle> columnHandles,
             Map<Symbol, Integer> sourceLayout,
             double selectivityThreshold)
@@ -78,30 +83,37 @@ public final class DynamicPageFilter
         this.session = requireNonNull(session, "session is null");
         this.irExpressionOptimizer = newOptimizer(plannerContext);
         this.domainTranslator = new DomainTranslator(plannerContext.getMetadata());
-        this.dynamicFilter = requireNonNull(dynamicFilter, "dynamicFilter is null");
         this.columnHandles = columnHandles.entrySet()
                 .stream()
                 .collect(toImmutableMap(Map.Entry::getValue, Map.Entry::getKey));
         this.sourceLayout = ImmutableMap.copyOf(sourceLayout);
         this.selectivityThreshold = selectivityThreshold;
-        this.isBlocked = dynamicFilter.isBlocked();
+        this.isBlocked = completedFuture(null);
     }
 
     // Compiled dynamic filter is fixed per-split and generated duration page source creation.
     // Page source implementations may subsequently implement blocking on completion of dynamic filters, but since
     // that occurs after page source creation, we cannot be guaranteed a completed dynamic filter here for initial splits
-    public synchronized Supplier<FilterEvaluator> createDynamicPageFilterEvaluator(ColumnarFilterCompiler compiler)
+    public synchronized Supplier<FilterEvaluator> createDynamicPageFilterEvaluator(ColumnarFilterCompiler compiler, DynamicFilter dynamicFilter)
     {
+        requireNonNull(dynamicFilter, "dynamicFilter is null");
+        // Sub-query cache may provide different instance of DynamicFilter per-split
+        if (currentDynamicFilter != dynamicFilter) {
+            currentDynamicFilter = dynamicFilter;
+            isBlocked = dynamicFilter.isBlocked();
+        }
         if (isBlocked == null) {
             return compiledDynamicFilter;
         }
         // Recompile dynamic filter if it has potentially changed since last compilation
-        // We will re-compile each time DynamicFilter unblocks which should be equal to number of dynamic filters
         if (compiledDynamicFilter == null || isBlocked.isDone()) {
             isBlocked = dynamicFilter.isBlocked();
             boolean isAwaitable = dynamicFilter.isAwaitable();
-            TupleDomain<Symbol> currentPredicate = dynamicFilter.getCurrentPredicate().transformKeys(columnHandles::get);
-            List<Expression> expressionConjuncts = domainTranslator.toPredicateConjuncts(currentPredicate)
+            TupleDomain<ColumnHandle> currentPredicate = dynamicFilter.getCurrentPredicate();
+            if (currentPredicate.equals(lastCompiledTupleDomain)) {
+                return compiledDynamicFilter;
+            }
+            List<Expression> expressionConjuncts = domainTranslator.toPredicateConjuncts(currentPredicate.transformKeys(columnHandles::get))
                     .stream()
                     // Run the expression derived from TupleDomain through IR optimizer to simplify predicates. E.g. SimplifyContinuousInValues
                     .map(expression -> irExpressionOptimizer.process(expression, session, ImmutableMap.of()).orElse(expression))
@@ -112,6 +124,7 @@ public final class DynamicPageFilter
                     .map(expression -> translate(expression, sourceLayout, metadata, typeManager))
                     .collect(toImmutableList());
             compiledDynamicFilter = createDynamicFilterEvaluator(rowExpression, compiler, selectivityThreshold);
+            lastCompiledTupleDomain = currentPredicate;
             if (!isAwaitable) {
                 isBlocked = null; // Dynamic filter will not narrow down anymore
             }
