@@ -17,11 +17,14 @@ import com.google.common.collect.HashMultiset;
 import com.google.common.collect.ImmutableMultiset;
 import com.google.common.collect.Multiset;
 import io.airlift.slice.Slices;
+import io.airlift.units.Duration;
 import io.opentelemetry.sdk.trace.data.SpanData;
 import io.trino.filesystem.Location;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.filesystem.TrinoInput;
 import io.trino.filesystem.TrinoInputFile;
+import io.trino.filesystem.memory.MemoryFileSystemCache;
+import io.trino.filesystem.memory.MemoryFileSystemCacheConfig;
 import io.trino.filesystem.memory.MemoryFileSystemFactory;
 import io.trino.filesystem.tracing.TracingFileSystemFactory;
 import io.trino.spi.block.TestingSession;
@@ -37,8 +40,10 @@ import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 
+import static io.airlift.tracing.Tracing.noopTracer;
 import static io.trino.filesystem.tracing.FileSystemAttributes.FILE_LOCATION;
 import static io.trino.testing.MultisetAssertions.assertMultisetsEqual;
+import static java.util.concurrent.TimeUnit.HOURS;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.TestInstance.Lifecycle;
 
@@ -53,7 +58,9 @@ public class TestCacheFileSystemAccessOperations
     void setUp()
     {
         tracingFileSystemFactory = new TracingFileSystemFactory(telemetry.getTracer(), new MemoryFileSystemFactory());
-        fileSystem = new CacheFileSystem(tracingFileSystemFactory.create(TestingSession.SESSION), new TestingMemoryFileSystemCache(), new DefaultCacheKeyProvider());
+        MemoryFileSystemCacheConfig configuration = new MemoryFileSystemCacheConfig()
+                .setCacheTTL(new Duration(24, HOURS));
+        fileSystem = new CacheFileSystem(tracingFileSystemFactory.create(TestingSession.SESSION), new MemoryFileSystemCache(noopTracer(), configuration), new DefaultCacheKeyProvider());
     }
 
     @AfterAll
@@ -76,7 +83,7 @@ public class TestCacheFileSystemAccessOperations
         assertReadOperations(location, content,
                 ImmutableMultiset.<FileOperation>builder()
                         .add(new FileOperation(location, "InputFile.length"))
-                        .add(new FileOperation(location, "InputFile.newStream"))
+                        .add(new FileOperation(location, "InputFile.newInput"))
                         .add(new FileOperation(location, "InputFile.lastModified"))
                         .build());
         assertReadOperations(location, content,
@@ -91,7 +98,7 @@ public class TestCacheFileSystemAccessOperations
         assertReadOperations(location, modifiedContent,
                 ImmutableMultiset.<FileOperation>builder()
                         .add(new FileOperation(location, "InputFile.length"))
-                        .add(new FileOperation(location, "InputFile.newStream"))
+                        .add(new FileOperation(location, "InputFile.newInput"))
                         .add(new FileOperation(location, "InputFile.lastModified"))
                         .build());
     }

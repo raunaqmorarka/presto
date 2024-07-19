@@ -29,10 +29,12 @@ import org.junit.jupiter.api.parallel.ExecutionMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
 
 import static com.google.common.io.MoreFiles.deleteRecursively;
 import static com.google.common.io.RecursiveDeleteOption.ALLOW_INSECURE;
 import static io.trino.filesystem.tracing.CacheSystemAttributes.CACHE_FILE_LOCATION;
+import static io.trino.filesystem.tracing.FileSystemAttributes.FILE_LOCATION;
 import static io.trino.plugin.iceberg.IcebergQueryRunner.ICEBERG_CATALOG;
 import static io.trino.plugin.iceberg.util.FileOperationUtils.FileType.DATA;
 import static io.trino.plugin.iceberg.util.FileOperationUtils.FileType.MANIFEST;
@@ -42,28 +44,21 @@ import static io.trino.testing.MultisetAssertions.assertMultisetsEqual;
 import static java.util.Objects.requireNonNull;
 import static java.util.stream.Collectors.toCollection;
 
-// single-threaded as DistributedQueryRunner.spans is shared mutable state
 @Execution(ExecutionMode.SAME_THREAD)
-public class TestIcebergAlluxioCacheFileOperations
+public class TestIcebergMemoryCacheFileOperations
         extends AbstractTestQueryFramework
 {
-    public static final String TEST_SCHEMA = "test_alluxio_schema";
-    private Path cacheDirectory;
+    private static final String TEST_SCHEMA = "test_memory_schema";
 
     @Override
     protected DistributedQueryRunner createQueryRunner()
             throws Exception
     {
-        cacheDirectory = Files.createTempDirectory("cache");
-        closeAfterClass(() -> deleteRecursively(cacheDirectory, ALLOW_INSECURE));
         Path metastoreDirectory = Files.createTempDirectory(ICEBERG_CATALOG);
         closeAfterClass(() -> deleteRecursively(metastoreDirectory, ALLOW_INSECURE));
 
         Map<String, String> icebergProperties = ImmutableMap.<String, String>builder()
-                .put("fs.cache.enabled", "true")
-                .put("fs.cache.directories", cacheDirectory.toAbsolutePath().toString())
-                .put("fs.cache.max-sizes", "100MB")
-                .put("iceberg.metadata-cache.enabled", "false")
+                .put("iceberg.metadata-cache.enabled", "true")
                 .put("hive.metastore.catalog.dir", metastoreDirectory.toUri().toString())
                 .buildOrThrow();
 
@@ -88,25 +83,24 @@ public class TestIcebergAlluxioCacheFileOperations
         assertFileSystemAccesses(
                 "SELECT * FROM test_cache_file_operations",
                 ImmutableMultiset.<CacheOperation>builder()
-                        .addCopies(new CacheOperation("Alluxio.readExternal", DATA), 2)
-                        .addCopies(new CacheOperation("Alluxio.readCached", DATA), 2)
-                        .addCopies(new CacheOperation("Alluxio.writeCache", DATA), 2)
-                        .add(new CacheOperation("Alluxio.readExternal", METADATA_JSON))
-                        .add(new CacheOperation("Alluxio.readCached", METADATA_JSON))
-                        .add(new CacheOperation("Alluxio.writeCache", METADATA_JSON))
-                        .addCopies(new CacheOperation("Alluxio.readCached", SNAPSHOT), 2)
-                        .add(new CacheOperation("Alluxio.readExternal", MANIFEST))
-                        .addCopies(new CacheOperation("Alluxio.readCached", MANIFEST), 4)
-                        .add(new CacheOperation("Alluxio.writeCache", MANIFEST))
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.loadCache", DATA), 2)
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.cacheInput", DATA), 2)
+                        .add(new CacheOperation("MemoryFileSystemCache.loadCache", METADATA_JSON))
+                        .add(new CacheOperation("MemoryFileSystemCache.cacheInputStream", METADATA_JSON))
+                        .add(new CacheOperation("InputFile.length", SNAPSHOT))
+                        .add(new CacheOperation("MemoryFileSystemCache.cacheInputStream", SNAPSHOT))
+                        .add(new CacheOperation("MemoryFileSystemCache.loadCache", MANIFEST))
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.cacheInputStream", MANIFEST), 2)
                         .build());
 
         assertFileSystemAccesses(
                 "SELECT * FROM test_cache_file_operations",
                 ImmutableMultiset.<CacheOperation>builder()
-                        .addCopies(new CacheOperation("Alluxio.readCached", DATA), 2)
-                        .add(new CacheOperation("Alluxio.readCached", METADATA_JSON))
-                        .addCopies(new CacheOperation("Alluxio.readCached", SNAPSHOT), 2)
-                        .addCopies(new CacheOperation("Alluxio.readCached", MANIFEST), 4)
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.cacheInput", DATA), 2)
+                        .add(new CacheOperation("MemoryFileSystemCache.cacheInputStream", METADATA_JSON))
+                        .add(new CacheOperation("InputFile.length", SNAPSHOT))
+                        .add(new CacheOperation("MemoryFileSystemCache.cacheInputStream", SNAPSHOT))
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.cacheInputStream", MANIFEST), 2)
                         .build());
 
         assertUpdate("INSERT INTO test_cache_file_operations VALUES ('p3', '3-xyz')", 1);
@@ -116,24 +110,23 @@ public class TestIcebergAlluxioCacheFileOperations
         assertFileSystemAccesses(
                 "SELECT * FROM test_cache_file_operations",
                 ImmutableMultiset.<CacheOperation>builder()
-                        .addCopies(new CacheOperation("Alluxio.readExternal", DATA), 3)
-                        .addCopies(new CacheOperation("Alluxio.readCached", DATA), 5)
-                        .addCopies(new CacheOperation("Alluxio.writeCache", DATA), 3)
-                        .add(new CacheOperation("Alluxio.readExternal", METADATA_JSON))
-                        .addCopies(new CacheOperation("Alluxio.readCached", METADATA_JSON), 2)
-                        .add(new CacheOperation("Alluxio.writeCache", METADATA_JSON))
-                        .addCopies(new CacheOperation("Alluxio.readCached", SNAPSHOT), 2)
-                        .add(new CacheOperation("Alluxio.readExternal", MANIFEST))
-                        .addCopies(new CacheOperation("Alluxio.readCached", MANIFEST), 10)
-                        .add(new CacheOperation("Alluxio.writeCache", MANIFEST))
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.loadCache", DATA), 3)
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.cacheInput", DATA), 5)
+                        .add(new CacheOperation("MemoryFileSystemCache.loadCache", METADATA_JSON))
+                        .add(new CacheOperation("MemoryFileSystemCache.cacheInputStream", METADATA_JSON))
+                        .add(new CacheOperation("InputFile.length", SNAPSHOT))
+                        .add(new CacheOperation("MemoryFileSystemCache.cacheInputStream", SNAPSHOT))
+                        .add(new CacheOperation("MemoryFileSystemCache.loadCache", MANIFEST))
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.cacheInputStream", MANIFEST), 5)
                         .build());
         assertFileSystemAccesses(
                 "SELECT * FROM test_cache_file_operations",
                 ImmutableMultiset.<CacheOperation>builder()
-                        .addCopies(new CacheOperation("Alluxio.readCached", DATA), 5)
-                        .addCopies(new CacheOperation("Alluxio.readCached", METADATA_JSON), 2)
-                        .addCopies(new CacheOperation("Alluxio.readCached", SNAPSHOT), 2)
-                        .addCopies(new CacheOperation("Alluxio.readCached", MANIFEST), 10)
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.cacheInput", DATA), 5)
+                        .add(new CacheOperation("MemoryFileSystemCache.cacheInputStream", METADATA_JSON))
+                        .add(new CacheOperation("InputFile.length", SNAPSHOT))
+                        .add(new CacheOperation("MemoryFileSystemCache.cacheInputStream", SNAPSHOT))
+                        .addCopies(new CacheOperation("MemoryFileSystemCache.cacheInputStream", MANIFEST), 5)
                         .build());
     }
 
@@ -147,8 +140,10 @@ public class TestIcebergAlluxioCacheFileOperations
     private Multiset<CacheOperation> getCacheOperations()
     {
         return getQueryRunner().getSpans().stream()
-                .filter(span -> span.getName().startsWith("Alluxio."))
-                .filter(span -> !isTrinoSchemaOrPermissions(requireNonNull(span.getAttributes().get(CACHE_FILE_LOCATION))))
+                .filter(span -> span.getName().startsWith("MemoryFileSystemCache.") || span.getName().equals("InputFile.length"))
+                .filter(span -> !isTrinoSchemaOrPermissions(requireNonNull(
+                        Optional.ofNullable(span.getAttributes().get(CACHE_FILE_LOCATION))
+                                .orElse(span.getAttributes().get(FILE_LOCATION)))))
                 .map(span -> CacheOperation.create(span.getName(), span.getAttributes()))
                 .collect(toCollection(HashMultiset::create));
     }
@@ -157,7 +152,9 @@ public class TestIcebergAlluxioCacheFileOperations
     {
         public static CacheOperation create(String operationName, Attributes attributes)
         {
-            String path = requireNonNull(attributes.get(CACHE_FILE_LOCATION));
+            String path = requireNonNull(
+                    Optional.ofNullable(attributes.get(CACHE_FILE_LOCATION))
+                            .orElse(attributes.get(FILE_LOCATION)));
             return new CacheOperation(operationName, FileOperationUtils.FileType.fromFilePath(path));
         }
     }

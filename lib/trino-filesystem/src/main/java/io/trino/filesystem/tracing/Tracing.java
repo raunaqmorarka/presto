@@ -21,17 +21,17 @@ import io.opentelemetry.semconv.ExceptionAttributes;
 
 import java.util.Optional;
 
-final class Tracing
+public final class Tracing
 {
     private Tracing() {}
 
-    public static <T> Attributes attribute(AttributeKey<T> key, Optional<T> optionalValue)
+    static <T> Attributes attribute(AttributeKey<T> key, Optional<T> optionalValue)
     {
         return optionalValue.map(value -> Attributes.of(key, value))
                 .orElseGet(Attributes::empty);
     }
 
-    public static <E extends Exception> void withTracing(Span span, CheckedRunnable<E> runnable)
+    static <E extends Exception> void withTracing(Span span, CheckedRunnable<E> runnable)
             throws E
     {
         withTracing(span, () -> {
@@ -56,7 +56,7 @@ final class Tracing
         }
     }
 
-    public interface CheckedRunnable<E extends Exception>
+    interface CheckedRunnable<E extends Exception>
     {
         void run()
                 throws E;
