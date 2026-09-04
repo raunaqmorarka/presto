@@ -25,6 +25,7 @@ import io.trino.metastore.HiveMetastoreFactory;
 import io.trino.metastore.RawHiveMetastoreFactory;
 import io.trino.plugin.base.security.UserNameProvider;
 import io.trino.plugin.hive.AllowHiveTableRename;
+import io.trino.plugin.hive.metastore.glue.GlueHiveMetastoreConfig;
 
 import java.util.concurrent.ExecutorService;
 
@@ -55,10 +56,19 @@ public final class ThriftMetastoreModule
         binder.bind(ThriftMetastoreFactory.class).to(ThriftHiveMetastoreFactory.class).in(Scopes.SINGLETON);
         newExporter(binder).export(ThriftMetastoreFactory.class)
                 .as(generator -> generator.generatedNameOf(ThriftHiveMetastore.class));
-        binder.bind(HiveMetastoreFactory.class)
-                .annotatedWith(RawHiveMetastoreFactory.class)
-                .to(BridgingHiveMetastoreFactory.class)
-                .in(Scopes.SINGLETON);
+        if (buildConfigObject(GlueHiveMetastoreConfig.class).getSchemaMappingRules().isPresent()) {
+            binder.bind(BridgingHiveMetastoreFactory.class).in(Scopes.SINGLETON);
+            binder.bind(HiveMetastoreFactory.class)
+                    .annotatedWith(RawHiveMetastoreFactory.class)
+                    .to(SchemaMappingHiveMetastoreFactory.class)
+                    .in(Scopes.SINGLETON);
+        }
+        else {
+            binder.bind(HiveMetastoreFactory.class)
+                    .annotatedWith(RawHiveMetastoreFactory.class)
+                    .to(BridgingHiveMetastoreFactory.class)
+                    .in(Scopes.SINGLETON);
+        }
 
         newOptionalBinder(binder, Key.get(UserNameProvider.class, ForHiveMetastore.class))
                 .setDefault()
