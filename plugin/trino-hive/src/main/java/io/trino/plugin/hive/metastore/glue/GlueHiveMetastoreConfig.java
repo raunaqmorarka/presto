@@ -47,6 +47,7 @@ public class GlueHiveMetastoreConfig
     private Optional<String> awsSecretKey = Optional.empty();
     private boolean useWebIdentityTokenCredentialsProvider;
     private Optional<String> catalogId = Optional.empty();
+    private Optional<String> schemaMappingRules = Optional.empty();
     private int partitionSegments = 5;
     private int threads = 40;
     private boolean assumeCanonicalPartitionKeys;
@@ -235,6 +236,19 @@ public class GlueHiveMetastoreConfig
     public GlueHiveMetastoreConfig setCatalogId(String catalogId)
     {
         this.catalogId = Optional.ofNullable(catalogId);
+        return this;
+    }
+
+    public Optional<String> getSchemaMappingRules()
+    {
+        return schemaMappingRules;
+    }
+
+    @Config("hive.metastore.glue.schema-mapping-rules")
+    @ConfigDescription("Comma separated prefix:catalogId rules exposing Glue databases under prefixed schema names; catalogId may be empty for the default account")
+    public GlueHiveMetastoreConfig setSchemaMappingRules(String schemaMappingRules)
+    {
+        this.schemaMappingRules = Optional.ofNullable(schemaMappingRules);
         return this;
     }
 

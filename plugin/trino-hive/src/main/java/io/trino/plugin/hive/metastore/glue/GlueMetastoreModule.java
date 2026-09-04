@@ -115,8 +115,12 @@ public final class GlueMetastoreModule
 
     @Provides
     @Singleton
-    public static GlueCache createGlueCache(CachingHiveMetastoreConfig config, CatalogName catalogName, Node currentNode)
+    public static GlueCache createGlueCache(CachingHiveMetastoreConfig config, GlueHiveMetastoreConfig glueConfig, CatalogName catalogName, Node currentNode)
     {
+        // Schema mapping is cached by the generic metastore cache, keyed on the prefixed names
+        if (glueConfig.getSchemaMappingRules().isPresent()) {
+            return GlueCache.NOOP;
+        }
         Duration metadataCacheTtl = config.getMetastoreCacheTtl();
         Duration statsCacheTtl = config.getStatsCacheTtl();
 

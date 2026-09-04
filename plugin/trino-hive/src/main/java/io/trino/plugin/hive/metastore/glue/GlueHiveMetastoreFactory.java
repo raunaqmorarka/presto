@@ -13,31 +13,98 @@
  */
 package io.trino.plugin.hive.metastore.glue;
 
+import com.google.common.base.Splitter;
+import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.ImmutableSet;
 import com.google.inject.Inject;
 import io.opentelemetry.api.trace.Tracer;
+import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.metastore.HiveMetastore;
 import io.trino.metastore.HiveMetastoreFactory;
 import io.trino.metastore.tracing.TracingHiveMetastore;
+import io.trino.spi.catalog.CatalogName;
 import io.trino.spi.security.ConnectorIdentity;
 
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+
+import static com.google.common.base.Preconditions.checkArgument;
 
 public class GlueHiveMetastoreFactory
         implements HiveMetastoreFactory
 {
     private final HiveMetastore metastore;
+    private final boolean builtInCaching;
 
     // Glue metastore does not support impersonation, so just use single shared instance
     @Inject
-    public GlueHiveMetastoreFactory(GlueHiveMetastore metastore, Tracer tracer)
+    public GlueHiveMetastoreFactory(
+            GlueHiveMetastore metastore,
+            GlueHiveMetastoreConfig config,
+            TrinoFileSystemFactory fileSystemFactory,
+            CatalogName catalogName,
+            Set<GlueHiveMetastore.TableKind> visibleTableKinds,
+            Tracer tracer)
     {
-        this.metastore = new TracingHiveMetastore(tracer, metastore);
+        HiveMetastore delegate = metastore;
+        if (config.getSchemaMappingRules().isPresent()) {
+            Map<String, HiveMetastore> delegatesByPrefix = buildDelegates(
+                    config.getSchemaMappingRules().get(),
+                    metastore,
+                    config,
+                    fileSystemFactory,
+                    catalogName,
+                    visibleTableKinds);
+            delegate = new SchemaMappingHiveMetastore(delegate, delegatesByPrefix);
+        }
+        this.metastore = new TracingHiveMetastore(tracer, delegate);
+        // Schema mapping is cached by the generic metastore cache, keyed on the prefixed names
+        this.builtInCaching = config.getSchemaMappingRules().isEmpty();
+    }
+
+    private static Map<String, HiveMetastore> buildDelegates(
+            String rules,
+            GlueHiveMetastore defaultMetastore,
+            GlueHiveMetastoreConfig config,
+            TrinoFileSystemFactory fileSystemFactory,
+            CatalogName catalogName,
+            Set<GlueHiveMetastore.TableKind> visibleTableKinds)
+    {
+        ImmutableMap.Builder<String, HiveMetastore> delegates = ImmutableMap.builder();
+        for (String rule : Splitter.on(',').trimResults().omitEmptyStrings().split(rules)) {
+            int separator = rule.indexOf(':');
+            String prefix = separator == -1 ? rule : rule.substring(0, separator);
+            Optional<String> catalogId = separator == -1 || separator == rule.length() - 1
+                    ? Optional.empty()
+                    : Optional.of(rule.substring(separator + 1));
+            checkArgument(!prefix.isEmpty(), "Empty prefix in schema mapping rule: %s", rule);
+            if (catalogId.isEmpty()) {
+                // same account, reuse the default metastore
+                delegates.put(prefix, defaultMetastore);
+                continue;
+            }
+            GlueHiveMetastoreConfig catalogIdConfig = new GlueHiveMetastoreConfig().setCatalogId(catalogId.get());
+            delegates.put(prefix, new GlueHiveMetastore(
+                    GlueMetastoreModule.createGlueClient(
+                            config,
+                            ImmutableSet.of(
+                                    new GlueHiveExecutionInterceptor(config),
+                                    new GlueCatalogIdInterceptor(catalogIdConfig))),
+                    GlueCache.NOOP,
+                    new GlueMetastoreStats(),
+                    fileSystemFactory,
+                    config,
+                    new CatalogName(catalogName + "-" + prefix),
+                    visibleTableKinds));
+        }
+        return delegates.buildOrThrow();
     }
 
     @Override
     public boolean hasBuiltInCaching()
     {
-        return true;
+        return builtInCaching;
     }
 
     @Override
