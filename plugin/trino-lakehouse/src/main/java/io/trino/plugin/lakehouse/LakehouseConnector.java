@@ -13,6 +13,7 @@
  */
 package io.trino.plugin.lakehouse;
 
+import com.google.common.collect.ImmutableSet;
 import com.google.inject.Inject;
 import io.airlift.bootstrap.LifeCycleManager;
 import io.trino.plugin.hive.HiveSchemaProperties;
@@ -26,6 +27,8 @@ import io.trino.spi.connector.ConnectorPageSourceProviderFactory;
 import io.trino.spi.connector.ConnectorSession;
 import io.trino.spi.connector.ConnectorSplitManager;
 import io.trino.spi.connector.ConnectorTransactionHandle;
+import io.trino.spi.connector.TableProcedureMetadata;
+import io.trino.spi.procedure.Procedure;
 import io.trino.spi.session.PropertyMetadata;
 import io.trino.spi.transaction.IsolationLevel;
 
@@ -52,6 +55,8 @@ public class LakehouseConnector
     private final LakehouseSessionProperties sessionProperties;
     private final LakehouseTableProperties tableProperties;
     private final IcebergMaterializedViewProperties materializedViewProperties;
+    private final Set<Procedure> procedures;
+    private final Set<TableProcedureMetadata> tableProcedures;
 
     @Inject
     public LakehouseConnector(
@@ -63,7 +68,9 @@ public class LakehouseConnector
             LakehouseNodePartitioningProvider nodePartitioningProvider,
             LakehouseSessionProperties sessionProperties,
             LakehouseTableProperties tableProperties,
-            IcebergMaterializedViewProperties materializedViewProperties)
+            IcebergMaterializedViewProperties materializedViewProperties,
+            Set<Procedure> procedures,
+            Set<TableProcedureMetadata> tableProcedures)
     {
         this.lifeCycleManager = requireNonNull(lifeCycleManager, "lifeCycleManager is null");
         this.transactionManager = requireNonNull(transactionManager, "transactionManager is null");
@@ -74,6 +81,8 @@ public class LakehouseConnector
         this.sessionProperties = requireNonNull(sessionProperties, "sessionProperties is null");
         this.tableProperties = requireNonNull(tableProperties, "tableProperties is null");
         this.materializedViewProperties = requireNonNull(materializedViewProperties, "materializedViewProperties is null");
+        this.procedures = ImmutableSet.copyOf(requireNonNull(procedures, "procedures is null"));
+        this.tableProcedures = ImmutableSet.copyOf(requireNonNull(tableProcedures, "tableProcedures is null"));
     }
 
     @Override
@@ -123,6 +132,18 @@ public class LakehouseConnector
     public void rollback(ConnectorTransactionHandle transactionHandle)
     {
         transactionManager.rollback(transactionHandle);
+    }
+
+    @Override
+    public Set<Procedure> getProcedures()
+    {
+        return procedures;
+    }
+
+    @Override
+    public Set<TableProcedureMetadata> getTableProcedures()
+    {
+        return tableProcedures;
     }
 
     @Override

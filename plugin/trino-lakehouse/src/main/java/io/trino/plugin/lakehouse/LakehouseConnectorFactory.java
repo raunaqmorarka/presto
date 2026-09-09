@@ -20,6 +20,7 @@ import io.trino.plugin.base.ConnectorContextModule;
 import io.trino.plugin.base.TypeDeserializerModule;
 import io.trino.plugin.base.jmx.ConnectorObjectNameGeneratorModule;
 import io.trino.plugin.base.jmx.MBeanServerModule;
+import io.trino.plugin.hive.procedure.HiveProcedureModule;
 import io.trino.plugin.hive.security.HiveSecurityModule;
 import io.trino.spi.classloader.ThreadContextClassLoader;
 import io.trino.spi.connector.Connector;
@@ -54,6 +55,7 @@ public class LakehouseConnectorFactory
                     new TypeDeserializerModule(),
                     new LakehouseModule(),
                     new LakehouseHiveModule(),
+                    new HiveProcedureModule(),
                     new LakehouseIcebergModule(),
                     new LakehouseDeltaModule(),
                     new LakehouseHudiModule(),
