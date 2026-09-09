@@ -13,11 +13,14 @@
  */
 package io.trino.plugin.iceberg.catalog.glue;
 
+import com.google.common.collect.ImmutableList;
 import com.google.inject.Inject;
 import io.airlift.concurrent.BoundedExecutor;
 import io.trino.filesystem.TrinoFileSystemFactory;
 import io.trino.plugin.hive.metastore.glue.GlueHiveMetastoreConfig;
 import io.trino.plugin.hive.metastore.glue.GlueMetastoreStats;
+import io.trino.plugin.hive.metastore.glue.SchemaMappingDelegates;
+import io.trino.plugin.hive.metastore.glue.SchemaMappingDelegates.SchemaMappingRule;
 import io.trino.plugin.hive.security.UsingSystemSecurity;
 import io.trino.plugin.iceberg.ForIcebergMetadata;
 import io.trino.plugin.iceberg.ForIcebergSplitManager;
@@ -25,6 +28,7 @@ import io.trino.plugin.iceberg.IcebergConfig;
 import io.trino.plugin.iceberg.catalog.IcebergTableOperationsProvider;
 import io.trino.plugin.iceberg.catalog.TrinoCatalog;
 import io.trino.plugin.iceberg.catalog.TrinoCatalogFactory;
+import io.trino.plugin.iceberg.encryption.EncryptionManagerFactory;
 import io.trino.plugin.iceberg.fileio.ForwardingFileIoFactory;
 import io.trino.spi.NodeVersion;
 import io.trino.spi.catalog.CatalogName;
@@ -34,10 +38,14 @@ import org.weakref.jmx.Flatten;
 import org.weakref.jmx.Managed;
 import software.amazon.awssdk.services.glue.GlueClient;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 
+import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static com.google.common.util.concurrent.MoreExecutors.directExecutor;
 import static java.util.Objects.requireNonNull;
 
@@ -59,6 +67,10 @@ public class TrinoGlueCatalogFactory
     private final boolean isUsingSystemSecurity;
     private final Executor metadataFetchingExecutor;
     private final ExecutorService icebergScanExecutor;
+    private final List<SchemaMappingDelegate> schemaMappingDelegates;
+
+    // A rule without catalog id reuses the default catalog.
+    private record SchemaMappingDelegate(String prefix, Optional<StatsRecordingGlueClient> glueClient, Optional<IcebergTableOperationsProvider> tableOperationsProvider) {}
 
     @Inject
     public TrinoGlueCatalogFactory(
@@ -75,7 +87,8 @@ public class TrinoGlueCatalogFactory
             GlueMetastoreStats stats,
             GlueClient glueClient,
             @ForIcebergMetadata ExecutorService metadataExecutorService,
-            @ForIcebergSplitManager ExecutorService icebergScanExecutor)
+            @ForIcebergSplitManager ExecutorService icebergScanExecutor,
+            EncryptionManagerFactory encryptionManagerFactory)
     {
         this.catalogName = requireNonNull(catalogName, "catalogName is null");
         this.fileSystemFactory = requireNonNull(fileSystemFactory, "fileSystemFactory is null");
@@ -97,6 +110,36 @@ public class TrinoGlueCatalogFactory
             this.metadataFetchingExecutor = new BoundedExecutor(metadataExecutorService, icebergConfig.getMetadataParallelism());
         }
         this.icebergScanExecutor = requireNonNull(icebergScanExecutor, "icebergScanExecutor is null");
+        this.schemaMappingDelegates = glueConfig.getSchemaMappingRules()
+                .map(SchemaMappingDelegates::parseRules)
+                .orElse(ImmutableList.of())
+                .stream()
+                .map(rule -> createSchemaMappingDelegate(rule, glueConfig, catalogConfig, encryptionManagerFactory))
+                .collect(toImmutableList());
+    }
+
+    private SchemaMappingDelegate createSchemaMappingDelegate(
+            SchemaMappingRule rule,
+            GlueHiveMetastoreConfig glueConfig,
+            IcebergGlueCatalogConfig catalogConfig,
+            EncryptionManagerFactory encryptionManagerFactory)
+    {
+        if (rule.catalogId().isEmpty()) {
+            return new SchemaMappingDelegate(rule.prefix(), Optional.empty(), Optional.empty());
+        }
+        GlueClient ruleGlueClient = SchemaMappingDelegates.createGlueClient(glueConfig, rule.catalogId());
+        GlueMetastoreStats ruleStats = new GlueMetastoreStats();
+        return new SchemaMappingDelegate(
+                rule.prefix(),
+                Optional.of(new StatsRecordingGlueClient(ruleGlueClient, ruleStats)),
+                Optional.of(new GlueIcebergTableOperationsProvider(
+                        fileSystemFactory,
+                        fileIoFactory,
+                        typeManager,
+                        catalogConfig,
+                        ruleStats,
+                        ruleGlueClient,
+                        encryptionManagerFactory)));
     }
 
     @Managed
@@ -108,6 +151,24 @@ public class TrinoGlueCatalogFactory
 
     @Override
     public TrinoCatalog create(ConnectorIdentity identity)
+    {
+        TrinoGlueCatalog defaultCatalog = createCatalog(glueClient, tableOperationsProvider);
+        if (schemaMappingDelegates.isEmpty()) {
+            return defaultCatalog;
+        }
+        Map<String, TrinoCatalog> delegatesByPrefix = schemaMappingDelegates.stream()
+                .collect(toImmutableMap(
+                        SchemaMappingDelegate::prefix,
+                        delegate -> {
+                            if (delegate.glueClient().isEmpty()) {
+                                return defaultCatalog;
+                            }
+                            return createCatalog(delegate.glueClient().get(), delegate.tableOperationsProvider().orElseThrow());
+                        }));
+        return new SchemaMappingTrinoCatalog(defaultCatalog, delegatesByPrefix);
+    }
+
+    private TrinoGlueCatalog createCatalog(StatsRecordingGlueClient glueClient, IcebergTableOperationsProvider tableOperationsProvider)
     {
         return new TrinoGlueCatalog(
                 catalogName,
