@@ -13,7 +13,9 @@
  */
 package io.trino.plugin.hive.metastore.glue;
 
+import com.google.common.collect.HashMultiset;
 import com.google.common.collect.ImmutableMap;
+import com.google.common.collect.Multiset;
 import io.trino.metastore.AcidOperation;
 import io.trino.metastore.AcidTransactionOwner;
 import io.trino.metastore.Database;
@@ -47,11 +49,14 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static com.google.common.collect.ImmutableList.toImmutableList;
+import static com.google.common.collect.ImmutableMap.toImmutableMap;
 import static io.trino.spi.StandardErrorCode.NOT_SUPPORTED;
 import static java.util.Objects.requireNonNull;
 
 /**
  * Routes prefixed schema names to per-rule metastore delegates, exposing each delegate's databases under the prefix.
+ * A database held by a single mapped delegate is also exposed under its real name, so references written with real
+ * schema names, such as Hive view bodies, resolve.
  */
 public class SchemaMappingHiveMetastore
         implements HiveMetastore
@@ -75,6 +80,29 @@ public class SchemaMappingHiveMetastore
             }
         }
         return new Resolved(defaultDelegate, databaseName);
+    }
+
+    /**
+     * Locates an unprefixed database name in the mapped delegates. Empty when the name carries a prefix, exists in the
+     * default delegate, or is held by no delegate.
+     */
+    private Optional<Resolved> resolveUnprefixed(String databaseName)
+    {
+        if (delegatesByPrefix.keySet().stream().anyMatch(databaseName::startsWith)) {
+            return Optional.empty();
+        }
+        if (defaultDelegate.getDatabase(databaseName).isPresent()) {
+            return Optional.empty();
+        }
+        List<HiveMetastore> matches = delegatesByPrefix.values().stream()
+                .filter(delegate -> delegate.getDatabase(databaseName).isPresent())
+                .collect(toImmutableList());
+        if (matches.size() > 1) {
+            throw new TrinoException(NOT_SUPPORTED, "Schema %s exists in multiple schema mapping rules, qualify it with a prefix".formatted(databaseName));
+        }
+        return matches.stream()
+                .findFirst()
+                .map(delegate -> new Resolved(delegate, databaseName));
     }
 
     private Resolved resolve(Table table)
@@ -110,27 +138,51 @@ public class SchemaMappingHiveMetastore
     public Optional<Database> getDatabase(String databaseName)
     {
         Resolved resolved = resolve(databaseName);
-        return resolved.delegate().getDatabase(resolved.realDatabaseName())
-                .map(database -> Database.builder(database).setDatabaseName(databaseName).build());
+        Optional<Database> database = resolved.delegate().getDatabase(resolved.realDatabaseName());
+        if (database.isEmpty()) {
+            database = resolveUnprefixed(databaseName)
+                    .flatMap(fallback -> fallback.delegate().getDatabase(fallback.realDatabaseName()));
+        }
+        return database.map(value -> Database.builder(value).setDatabaseName(databaseName).build());
     }
 
     @Override
     public List<String> getAllDatabases()
     {
-        return Stream.concat(
-                        defaultDelegate.getAllDatabases().stream(),
-                        delegatesByPrefix.entrySet().stream()
-                                .flatMap(entry -> entry.getValue().getAllDatabases().stream()
-                                        .map(name -> entry.getKey() + name)))
+        List<String> defaultDatabases = defaultDelegate.getAllDatabases();
+        Map<String, List<String>> databasesByPrefix = delegatesByPrefix.entrySet().stream()
+                .collect(toImmutableMap(Map.Entry::getKey, entry -> entry.getValue().getAllDatabases()));
+        Multiset<String> realDatabaseNames = HashMultiset.create();
+        databasesByPrefix.values().forEach(realDatabaseNames::addAll);
+
+        Stream<String> prefixedNames = databasesByPrefix.entrySet().stream()
+                .flatMap(entry -> entry.getValue().stream().map(name -> entry.getKey() + name));
+        Stream<String> realNames = realDatabaseNames.elementSet().stream()
+                .filter(name -> isResolvableUnprefixed(name, defaultDatabases, realDatabaseNames));
+        return Stream.concat(defaultDatabases.stream(), Stream.concat(prefixedNames, realNames))
                 .collect(toImmutableList());
+    }
+
+    /**
+     * Tells whether an unprefixed name reaches a mapped delegate, matching what {@link #resolveUnprefixed} accepts.
+     */
+    private boolean isResolvableUnprefixed(String databaseName, List<String> defaultDatabases, Multiset<String> realDatabaseNames)
+    {
+        return delegatesByPrefix.keySet().stream().noneMatch(databaseName::startsWith)
+                && !defaultDatabases.contains(databaseName)
+                && realDatabaseNames.count(databaseName) == 1;
     }
 
     @Override
     public Optional<Table> getTable(String databaseName, String tableName)
     {
         Resolved resolved = resolve(databaseName);
-        return resolved.delegate().getTable(resolved.realDatabaseName(), tableName)
-                .map(table -> withDatabaseName(table, databaseName));
+        Optional<Table> table = resolved.delegate().getTable(resolved.realDatabaseName(), tableName);
+        if (table.isEmpty()) {
+            table = resolveUnprefixed(databaseName)
+                    .flatMap(fallback -> fallback.delegate().getTable(fallback.realDatabaseName(), tableName));
+        }
+        return table.map(value -> withDatabaseName(value, databaseName));
     }
 
     @Override
@@ -171,7 +223,13 @@ public class SchemaMappingHiveMetastore
     public List<TableInfo> getTables(String databaseName)
     {
         Resolved resolved = resolve(databaseName);
-        return resolved.delegate().getTables(resolved.realDatabaseName()).stream()
+        List<TableInfo> tables = resolved.delegate().getTables(resolved.realDatabaseName());
+        if (tables.isEmpty()) {
+            tables = resolveUnprefixed(databaseName)
+                    .map(fallback -> fallback.delegate().getTables(fallback.realDatabaseName()))
+                    .orElse(tables);
+        }
+        return tables.stream()
                 .map(tableInfo -> new TableInfo(
                         new SchemaTableName(databaseName, tableInfo.tableName().getTableName()),
                         tableInfo.extendedRelationType()))
